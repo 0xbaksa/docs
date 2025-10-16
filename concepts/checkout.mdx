@@ -1,0 +1,393 @@
+---
+title: 'Checkout Experience'
+description: 'White-Labeled checkout pages for your customers'
+---
+
+## How Checkout Works
+
+When you create a payment via the API, Card2Crypto generates a unique checkout URL where your customer completes the payment.
+
+```
+https://card2crypto.cc/checkout/pay_abc123xyz789
+```
+
+## Checkout Flow
+
+<Steps>
+  <Step title="Customer Clicks Pay">
+    Customer initiates payment on your website
+  </Step>
+  <Step title="Your Server Creates Payment">
+    Your backend calls the Card2Crypto API to create a payment
+  </Step>
+  <Step title="Redirect to Checkout URL">
+    Redirect customer to the checkout_url from API response
+  </Step>
+  <Step title="Customer Enters Card">
+    Customer enters credit card information on checkout page
+  </Step>
+  <Step title="Payment Processed">
+    Card2Crypto processes the payment securely
+  </Step>
+  <Step title="Return to Your Site">
+    Customer redirected back to your return_url with payment ID
+  </Step>
+</Steps>
+
+## White-Labeled Experience
+
+The checkout page is fully branded with your shop name and logo. Customers see your branding throughout the payment process, not Card2Crypto's.
+
+### What Customers See
+
+- Your shop name in the page title
+- Your shop name in the payment description
+- Clean, professional payment form
+- Secure secure payment processing
+- Mobile-responsive design
+
+### What Customers Don't See
+
+- Card2Crypto branding (minimal footer only)
+- Cryptocurrency mentions
+- Your API keys or backend details
+
+## Creating Checkout Sessions
+
+### Basic Example
+
+```javascript
+// 1. Create payment on your server
+const response = await fetch('https://card2crypto.cc/api/v1/payments', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer c2c_live_...',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    amount: 10000, // $100.00
+    currency: 'usd',
+    return_url: 'https://yoursite.com/success'
+  })
+});
+
+const payment = await response.json();
+
+// 2. Redirect customer to checkout
+window.location.href = payment.data.checkout_url;
+```
+
+### With Customer Information
+
+Pre-fill customer email and name for a better experience:
+
+```javascript
+const payment = await createPayment({
+  amount: 10000,
+  currency: 'usd',
+  return_url: 'https://yoursite.com/success',
+  customer_email: 'customer@example.com',
+  customer_name: 'John Doe'
+});
+
+// Customer sees their name and email pre-filled
+redirect(payment.data.checkout_url);
+```
+
+### With Metadata
+
+Pass order information to track the payment:
+
+```javascript
+const payment = await createPayment({
+  amount: 10000,
+  currency: 'usd',
+  return_url: 'https://yoursite.com/success',
+  metadata: {
+    order_id: '1234',
+    product: 'Premium Plan',
+    subscription_period: 'monthly'
+  }
+});
+```
+
+This metadata is returned in webhooks and when retrieving payment details.
+
+## Return URL Behavior
+
+After payment (success or failure), the customer is redirected to your return_url with the payment ID:
+
+```
+https://yoursite.com/success?payment_id=pay_abc123xyz789
+```
+
+### Handle Return URL
+
+```javascript
+// Express.js example
+app.get('/success', async (req, res) => {
+  const paymentId = req.query.payment_id;
+
+  if (!paymentId) {
+    return res.status(400).send('Missing payment ID');
+  }
+
+  // Retrieve payment to check status
+  const response = await fetch(
+    `https://card2crypto.cc/api/v1/payments/${paymentId}`,
+    {
+      headers: {
+        'Authorization': `Bearer ${process.env.CARD2CRYPTO_API_KEY}`
+      }
+    }
+  );
+
+  const payment = await response.json();
+
+  if (payment.data.status === 'completed') {
+    res.send('Thank you for your payment!');
+  } else if (payment.data.status === 'pending') {
+    res.send('Payment is being processed...');
+  } else {
+    res.send('Payment failed. Please try again.');
+  }
+});
+```
+
+### Return URL Best Practices
+
+1. **Always verify payment status** - Don't trust the return URL alone
+2. **Use HTTPS** - Ensure your return URL uses HTTPS
+3. **Include order context** - Add query params to identify the order:
+   ```javascript
+   return_url: `https://yoursite.com/success?order_id=${orderId}`
+   ```
+4. **Handle missing payment_id** - Validate the parameter exists
+
+## Checkout Page Security
+
+### PCI Compliance
+
+Card2Crypto handles all PCI compliance requirements. Your server never touches credit card data.
+
+- Card information goes directly from customer to our secure processor
+- You don't need PCI certification
+- No card data stored on your servers
+
+### Payment Security
+
+- Secure payment processing
+- 3D Secure authentication for fraud prevention
+- SSL/TLS encryption for all data
+- HMAC signatures for webhook verification
+
+### Customer Data
+
+Customer email and name (if provided) are:
+- Stored encrypted in Card2Crypto's database
+- Only accessible via API with your API key
+- Never shared with third parties
+- Included in webhooks to your server
+
+## Mobile Experience
+
+The checkout page is fully responsive and optimized for mobile devices:
+
+- Touch-friendly input fields
+- Mobile-optimized card input
+- Works on all screen sizes
+- Fast loading times
+
+## Payment Methods
+
+Currently supported:
+- All major credit cards (Visa, Mastercard, Amex, Discover)
+- Debit cards
+
+Not currently supported:
+- Apple Pay / Google Pay (coming soon)
+- Bank transfers
+- PayPal
+- Cryptocurrency direct payments
+
+## Checkout Expiration
+
+Checkout URLs don't expire. Customers can complete payment at any time after the URL is generated.
+
+However, best practice is to:
+- Generate fresh URLs for each payment attempt
+- Don't reuse checkout URLs
+- Cancel old pending payments if customer creates new ones
+
+## Error Handling
+
+### Payment Declined
+
+If a payment is declined:
+1. Customer sees error message on checkout page
+2. Customer can try a different card
+3. Status remains `pending` (not `failed`)
+4. No webhook is sent for declined attempts
+
+Only when customer abandons checkout or final failure occurs will status become `failed`.
+
+### Network Errors
+
+If customer loses connection during payment:
+- Customer can refresh and try again
+- Payment status can be checked via API
+
+### Timeout
+
+Checkout sessions don't timeout. Customer can return to the URL later to complete payment.
+
+## Customization
+
+### Current Customization Options
+
+- Shop name (shown on checkout page)
+- Return URL (where customer goes after payment)
+
+### Not Customizable (Yet)
+
+- Logo upload
+- Color scheme
+- Custom fields
+- Payment page layout
+
+These features may be added in future updates.
+
+## Testing Checkout
+
+### Development Testing
+
+1. Create a test payment with a small amount ($0.50 minimum)
+2. Use your production API keys
+3. Use real credit card (will be charged)
+4. Test the complete flow:
+   - Create payment
+   - Redirect to checkout
+   - Enter real card details
+   - Complete payment
+   - Verify return URL redirect
+   - Check webhook delivery
+
+### Test Cards
+
+Card2Crypto uses our live payment processor. Use real cards for testing.
+
+For development, use small amounts:
+```javascript
+amount: 50  // $0.50 - minimum amount
+```
+
+## Monitoring Checkouts
+
+Track checkout performance in your dashboard:
+
+- View all pending payments
+- See which payments are completed
+- Monitor failed payments
+- Check customer emails
+
+Visit: [Dashboard > Payments](https://card2crypto.cc/dashboard/payments)
+
+## Best Practices
+
+### 1. Generate Checkout URLs Server-Side
+
+Never generate checkout URLs in frontend code:
+
+```javascript
+// BAD - Exposes API key
+const checkout = await fetch('https://card2crypto.cc/api/v1/payments', {
+  headers: { 'Authorization': 'Bearer c2c_live_...' } // Never expose API keys!
+});
+
+// GOOD - Generate on backend
+app.post('/checkout', async (req, res) => {
+  const checkout = await createPayment();
+  res.json({ checkout_url: checkout.data.checkout_url });
+});
+```
+
+### 2. Validate Return URLs
+
+Don't rely solely on return URL for fulfillment:
+
+```javascript
+// BAD - Trusts return URL without verification
+app.get('/success', async (req, res) => {
+  await fulfillOrder(); // Dangerous! No verification
+});
+
+// GOOD - Verifies payment status
+app.get('/success', async (req, res) => {
+  const payment = await getPayment(req.query.payment_id);
+  if (payment.status === 'completed') {
+    await fulfillOrder();
+  }
+});
+```
+
+### 3. Use Webhooks for Fulfillment
+
+Return URLs can be skipped by users. Use webhooks for reliable fulfillment:
+
+```javascript
+// Webhook handler (reliable)
+app.post('/webhooks/card2crypto', (req, res) => {
+  if (req.body.event === 'payment.completed') {
+    fulfillOrder(req.body.payment.metadata.order_id);
+  }
+  res.send('OK');
+});
+```
+
+### 4. Provide Clear Return URLs
+
+Use descriptive return URLs that indicate what happened:
+
+```javascript
+// Good return URLs
+return_url: 'https://yoursite.com/order-confirmation'
+return_url: 'https://yoursite.com/payment-complete'
+return_url: 'https://yoursite.com/thank-you'
+
+// Bad return URLs
+return_url: 'https://yoursite.com/callback' // Unclear purpose
+return_url: 'https://yoursite.com/page' // Vague
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Create Payment"
+    icon="plus"
+    href="/api-reference/payments/create"
+  >
+    Learn how to create checkout sessions
+  </Card>
+  <Card
+    title="Webhook Overview"
+    icon="webhook"
+    href="/webhooks/overview"
+  >
+    Get real-time payment notifications
+  </Card>
+  <Card
+    title="Node.js Guide"
+    icon="node-js"
+    href="/guides/nodejs"
+  >
+    Complete integration tutorial
+  </Card>
+  <Card
+    title="Payment Concepts"
+    icon="book"
+    href="/concepts/payments"
+  >
+    Understand payment lifecycle
+  </Card>
+</CardGroup>

@@ -1,0 +1,262 @@
+---
+title: 'Fees & Pricing'
+description: 'Understand Card2Crypto pricing and fee structure'
+---
+
+## Platform Fee
+
+Card2Crypto charges a flat **15% fee** on all successful transactions.
+
+```
+Customer pays: $100.00
+Platform fee:   $15.00 (15%)
+You receive:    $85.00
+```
+
+## What's Included
+
+The 15% platform fee covers:
+
+- Payment gateway infrastructure
+- White-labeled checkout pages
+- Webhook delivery and automatic retries
+- 24/7 transaction monitoring
+- Fraud detection and prevention
+- Crypto withdrawal processing
+- Credit card processing fees
+- Customer support
+
+## Fee Calculation
+
+### Example 1: Basic Payment
+
+```
+Customer payment:    $100.00
+Platform fee (15%):  - $15.00
+Your balance:        = $85.00
+```
+
+## No Hidden Fees
+
+There are **NO** additional fees for:
+
+- API requests
+- Webhook delivery
+- Failed payment attempts
+- Refunds (fee is returned to you)
+- Multiple shops (you can only have one)
+- Dashboard access
+- Crypto withdrawals
+
+## Minimum Amounts
+
+### Minimum Payment
+
+**$0.50 USD** per transaction
+
+```javascript
+// Minimum valid payment
+{
+  "amount": 50,  // $0.50 in cents
+  "currency": "usd"
+}
+
+// This will fail
+{
+  "amount": 49,  // Too low
+  "currency": "usd"
+}
+```
+
+### Minimum Withdrawal
+
+**$10.00 USD** minimum balance required to request a crypto withdrawal
+
+Why?
+- Covers blockchain transaction fees
+- Ensures economical crypto transfers
+- Prevents dust withdrawals
+
+## Refund Fees
+
+When a payment is refunded:
+
+1. Customer receives full refund ($100.00)
+2. Platform fee is returned to your balance ($15.00)
+3. Your net balance change is $0
+
+You're only out the amount you received ($85), not the full payment amount.
+
+## Failed Payments
+
+**No fees charged** for failed or declined payments.
+
+You only pay the 15% fee when a payment successfully completes.
+
+## Withdrawal Fees
+
+### Bitcoin (BTC)
+
+No platform fee for withdrawals. You only pay the blockchain network fee (variable based on network congestion).
+
+Typical network fee: $1-$5 depending on Bitcoin network conditions
+
+### Litecoin (LTC)
+
+No platform fee for withdrawals. You only pay the blockchain network fee (variable based on network congestion).
+
+Typical network fee: $0.01-$0.50 depending on Litecoin network conditions
+
+### Why Litecoin May Be Better
+
+For smaller withdrawals, Litecoin often makes more sense:
+
+```
+Bitcoin withdrawal:
+  Balance: $100.00
+  Network fee: ~$3.00
+  You receive: ~$97.00 (97%)
+
+Litecoin withdrawal:
+  Balance: $100.00
+  Network fee: ~$0.10
+  You receive: ~$99.90 (99.9%)
+```
+
+## Balance Management
+
+Your balance is credited instantly when payments complete:
+
+```
+Starting balance:    $0.00
+Payment 1 ($100):   + $85.00
+Payment 2 ($50):    + $42.50
+Payment 3 ($200):   + $170.00
+Current balance:     $297.50
+```
+
+View your balance: [Dashboard > Balance](https://card2crypto.cc/dashboard/balance)
+
+## Fee Breakdown vs Traditional Processors
+
+### Card2Crypto
+
+```
+Customer pays:       $100.00
+Platform fee:        - $15.00 (15%)
+You receive:         $85.00
+
+Withdrawal to BTC:   $0.00 (only network fee ~$3)
+Net in your wallet:  ~$82.00
+```
+
+### Traditional Processor + Exchange
+
+```
+Customer pays:       $100.00
+Stripe fee:          - $3.20 (2.9% + $0.30)
+You receive:         $96.80
+
+Wire to exchange:    - $25.00 (typical wire fee)
+Exchange fee:        - $0.97 (1% trading fee)
+Withdrawal fee:      - $3.00 (blockchain fee)
+Net in your wallet:  ~$67.83
+```
+
+Card2Crypto's all-in-one approach is often more cost-effective despite the higher percentage, especially for:
+- Merchants who want crypto payouts
+- Users who value privacy (no KYC)
+- Small to medium transaction volumes
+
+## Pricing Comparison
+
+| Feature | Card2Crypto | Stripe + Exchange | PayPal + Exchange |
+|---------|-------------|-------------------|-------------------|
+| Transaction Fee | 15% | 2.9% + $0.30 | 3.49% + $0.49 |
+| Withdrawal Fee | Network only (~$3) | Wire $25 + Exchange 1% | Wire $25 + Exchange 1% |
+| KYC Required | No | Yes | Yes |
+| Crypto Payout | Built-in | Manual | Manual |
+| Setup Time | 5 minutes | 1-2 weeks | 1-2 weeks |
+
+## Volume Discounts
+
+Currently, all sellers pay the same 15% rate regardless of volume.
+
+Enterprise pricing may be available in the future for very high-volume merchants. Contact support for inquiries.
+
+## Tax Considerations
+
+Card2Crypto does not:
+- Issue 1099 forms
+- Report income to tax authorities
+- Withhold taxes
+
+You are responsible for:
+- Tracking your income
+- Reporting crypto transactions
+- Paying applicable taxes
+
+Consult a tax professional for guidance on cryptocurrency income reporting in your jurisdiction.
+
+## Fee Transparency
+
+View all fees in your dashboard:
+
+1. Go to [Dashboard > Payments](https://card2crypto.cc/dashboard/payments)
+2. See breakdown for each transaction:
+   - Customer payment amount
+   - Platform fee
+   - Amount credited to your balance
+
+## FAQ
+
+### Are there any setup fees?
+
+No. Creating an account is completely free.
+
+### Are there monthly fees?
+
+No monthly or subscription fees. You only pay when you receive payments.
+
+### What if I don't make any sales?
+
+You pay nothing. There are no minimums or monthly charges.
+
+### Can fees change?
+
+We reserve the right to adjust fees, but will provide 30 days notice for any increases.
+
+Current sellers will be grandfathered at 15% for at least 12 months from their signup date.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Create Your Shop"
+    icon="shop"
+    href="https://card2crypto.cc/dashboard/shops"
+  >
+    Start accepting payments today
+  </Card>
+  <Card
+    title="Quickstart Guide"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Integrate in 5 minutes
+  </Card>
+  <Card
+    title="Request Withdrawal"
+    icon="bitcoin"
+    href="https://card2crypto.cc/dashboard/balance"
+  >
+    Withdraw your balance to crypto
+  </Card>
+  <Card
+    title="FAQ"
+    icon="question"
+    href="/resources/faq"
+  >
+    More questions? Check our FAQ
+  </Card>
+</CardGroup>

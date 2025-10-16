@@ -1,0 +1,550 @@
+---
+title: 'Testing Webhooks'
+description: 'How to test webhooks during development'
+---
+
+## Testing Strategies
+
+There are several ways to test webhooks during development:
+
+1. Use the built-in "Test Webhook" button in your dashboard
+2. Expose your local server with ngrok or similar tools
+3. Use webhook testing services
+4. Create a staging environment
+
+## Test Webhook Button
+
+The easiest way to test webhooks is using the built-in test button.
+
+### How to Use
+
+1. Go to [Dashboard > Shops](https://card2crypto.cc/dashboard/shops)
+2. Click on your shop
+3. Enter your webhook URL
+4. Click "Test Webhook"
+
+This sends a `payment.completed` event with test data to your endpoint.
+
+### Test Payload
+
+```json
+{
+  "event": "payment.completed",
+  "payment": {
+    "id": "test_payment_1729123456789",
+    "amount": 10.00,
+    "currency": "usd",
+    "status": "completed",
+    "customer_email": "test@example.com",
+    "customer_name": "Test Customer",
+    "metadata": {
+      "description": "Test payment for webhook verification"
+    },
+    "created_at": "2025-10-16T12:00:00Z",
+    "completed_at": "2025-10-16T12:00:00Z"
+  },
+  "shop": {
+    "id": "your_shop_id",
+    "shop_name": "Your Shop Name"
+  },
+  "timestamp": "2025-10-16T12:00:00Z"
+}
+```
+
+### Expected Response
+
+Your endpoint should:
+- Return `200 OK` status code
+- Respond within 10 seconds
+- Verify the HMAC signature
+
+If successful, you'll see: "Webhook test successful! Your endpoint is configured correctly."
+
+## Local Development with ngrok
+
+When developing locally, your server isn't publicly accessible. Use ngrok to create a public URL that forwards to your local machine.
+
+### Setup ngrok
+
+1. Download and install [ngrok](https://ngrok.com/download)
+
+2. Start your local server:
+```bash
+npm run dev
+# Server running on http://localhost:3000
+```
+
+3. Start ngrok:
+```bash
+ngrok http 3000
+```
+
+4. Copy the ngrok URL:
+```
+Forwarding    https://abc123.ngrok.io -> http://localhost:3000
+```
+
+5. Use this URL in your webhook settings:
+```
+https://abc123.ngrok.io/api/webhooks/card2crypto
+```
+
+### Example Setup
+
+```javascript
+// app.js - Your local server
+const express = require('express');
+const app = express();
+
+app.post('/api/webhooks/card2crypto', express.json(), (req, res) => {
+  console.log('Webhook received:', req.body);
+
+  // Your webhook handling logic
+  const { event, payment } = req.body;
+
+  if (event === 'payment.completed') {
+    console.log('Payment completed:', payment.id);
+  }
+
+  res.status(200).send('OK');
+});
+
+app.listen(3000, () => {
+  console.log('Server running on http://localhost:3000');
+});
+```
+
+### Testing with ngrok
+
+1. Start server: `node app.js`
+2. Start ngrok: `ngrok http 3000`
+3. Update webhook URL in dashboard to: `https://abc123.ngrok.io/api/webhooks/card2crypto`
+4. Click "Test Webhook" button
+5. Check your local console for webhook logs
+
+## Alternative Tools
+
+### LocalTunnel
+
+Free alternative to ngrok:
+
+```bash
+npm install -g localtunnel
+lt --port 3000
+```
+
+Use the provided URL in your webhook settings.
+
+### Cloudflare Tunnel
+
+Another free option:
+
+```bash
+# Install cloudflared
+brew install cloudflare/cloudflare/cloudflared  # macOS
+# or download from https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/
+
+# Start tunnel
+cloudflared tunnel --url http://localhost:3000
+```
+
+## Webhook Testing Services
+
+### webhook.site
+
+For quick testing without code:
+
+1. Go to [webhook.site](https://webhook.site)
+2. Copy your unique URL
+3. Use it as your webhook URL in Card2Crypto dashboard
+4. Click "Test Webhook"
+5. View the received webhook on webhook.site
+
+This is useful for:
+- Viewing webhook structure
+- Checking headers
+- Verifying signatures
+- Debugging issues
+
+### RequestBin
+
+Similar to webhook.site:
+
+1. Go to [requestbin.com](https://requestbin.com)
+2. Click "Create a RequestBin"
+3. Use the provided URL in your dashboard
+4. Test webhooks and inspect payloads
+
+## Manual Testing
+
+Create test scripts to send webhooks to your endpoint:
+
+### Node.js Test Script
+
+```javascript
+// test-webhook.js
+const crypto = require('crypto');
+
+const webhookUrl = 'http://localhost:3000/api/webhooks/card2crypto';
+const webhookSecret = 'your_webhook_secret';
+
+const payload = {
+  event: 'payment.completed',
+  payment: {
+    id: 'test_payment_' + Date.now(),
+    amount: 10.00,
+    currency: 'usd',
+    status: 'completed',
+    customer_email: 'test@example.com',
+    customer_name: 'Test Customer',
+    metadata: {
+      order_id: 'test_123'
+    },
+    created_at: new Date().toISOString(),
+    completed_at: new Date().toISOString()
+  },
+  shop: {
+    id: 'shop_test',
+    shop_name: 'Test Shop'
+  },
+  timestamp: new Date().toISOString()
+};
+
+// Generate signature
+const signature = crypto
+  .createHmac('sha256', webhookSecret)
+  .update(JSON.stringify(payload))
+  .digest('hex');
+
+// Send webhook
+fetch(webhookUrl, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-Card2Crypto-Signature': signature
+  },
+  body: JSON.stringify(payload)
+})
+  .then(res => res.text())
+  .then(body => {
+    console.log('Webhook sent successfully');
+    console.log('Response:', body);
+  })
+  .catch(error => {
+    console.error('Error sending webhook:', error);
+  });
+```
+
+Run it:
+```bash
+node test-webhook.js
+```
+
+### cURL Test
+
+```bash
+#!/bin/bash
+
+WEBHOOK_URL="http://localhost:3000/api/webhooks/card2crypto"
+WEBHOOK_SECRET="your_webhook_secret"
+
+PAYLOAD='{
+  "event": "payment.completed",
+  "payment": {
+    "id": "test_payment_123",
+    "amount": 10.00,
+    "currency": "usd",
+    "status": "completed",
+    "customer_email": "test@example.com",
+    "customer_name": "Test Customer",
+    "metadata": {
+      "order_id": "test_123"
+    },
+    "created_at": "2025-10-16T12:00:00Z",
+    "completed_at": "2025-10-16T12:00:00Z"
+  },
+  "shop": {
+    "id": "shop_test",
+    "shop_name": "Test Shop"
+  },
+  "timestamp": "2025-10-16T12:00:00Z"
+}'
+
+# Generate signature (requires openssl)
+SIGNATURE=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" -hex | cut -d' ' -f2)
+
+# Send webhook
+curl -X POST "$WEBHOOK_URL" \
+  -H "Content-Type: application/json" \
+  -H "X-Card2Crypto-Signature: $SIGNATURE" \
+  -d "$PAYLOAD"
+```
+
+## Testing Different Events
+
+Test all event types to ensure your integration handles them correctly:
+
+### Payment Completed
+
+```javascript
+const completedPayload = {
+  event: 'payment.completed',
+  payment: {
+    status: 'completed',
+    completed_at: new Date().toISOString(),
+    // ... other fields
+  }
+};
+```
+
+### Payment Failed
+
+```javascript
+const failedPayload = {
+  event: 'payment.failed',
+  payment: {
+    status: 'failed',
+    completed_at: null,
+    // ... other fields
+  }
+};
+```
+
+### Payment Refunded
+
+```javascript
+const refundedPayload = {
+  event: 'payment.refunded',
+  payment: {
+    status: 'refunded',
+    completed_at: '2025-10-16T12:01:30Z', // Original completion time
+    // ... other fields
+  }
+};
+```
+
+## Automated Testing
+
+### Unit Tests
+
+Test your webhook handler in isolation:
+
+```javascript
+// webhook-handler.test.js
+const { handleWebhook } = require('./webhook-handler');
+
+describe('Webhook Handler', () => {
+  test('handles payment.completed event', async () => {
+    const event = {
+      event: 'payment.completed',
+      payment: {
+        id: 'pay_123',
+        amount: 100.00,
+        status: 'completed',
+        metadata: { order_id: '1234' }
+      }
+    };
+
+    const result = await handleWebhook(event);
+
+    expect(result.success).toBe(true);
+    expect(mockDatabase.orders.update).toHaveBeenCalledWith({
+      where: { id: '1234' },
+      data: { status: 'paid' }
+    });
+  });
+
+  test('handles payment.failed event', async () => {
+    const event = {
+      event: 'payment.failed',
+      payment: {
+        id: 'pay_456',
+        amount: 100.00,
+        status: 'failed',
+        metadata: { order_id: '5678' }
+      }
+    };
+
+    const result = await handleWebhook(event);
+
+    expect(result.success).toBe(true);
+    expect(mockDatabase.orders.update).toHaveBeenCalledWith({
+      where: { id: '5678' },
+      data: { status: 'payment_failed' }
+    });
+  });
+});
+```
+
+### Integration Tests
+
+Test the complete webhook flow:
+
+```javascript
+// webhook.integration.test.js
+const crypto = require('crypto');
+const request = require('supertest');
+const app = require('./app');
+
+describe('Webhook Integration', () => {
+  test('accepts valid webhook', async () => {
+    const payload = {
+      event: 'payment.completed',
+      payment: {
+        id: 'pay_123',
+        amount: 10.00,
+        status: 'completed',
+        metadata: { order_id: '1234' }
+      }
+    };
+
+    const signature = crypto
+      .createHmac('sha256', process.env.WEBHOOK_SECRET)
+      .update(JSON.stringify(payload))
+      .digest('hex');
+
+    const response = await request(app)
+      .post('/api/webhooks/card2crypto')
+      .set('X-Card2Crypto-Signature', signature)
+      .send(payload);
+
+    expect(response.status).toBe(200);
+  });
+
+  test('rejects invalid signature', async () => {
+    const payload = {
+      event: 'payment.completed',
+      payment: { id: 'pay_123', amount: 10.00 }
+    };
+
+    const response = await request(app)
+      .post('/api/webhooks/card2crypto')
+      .set('X-Card2Crypto-Signature', 'invalid_signature')
+      .send(payload);
+
+    expect(response.status).toBe(401);
+  });
+});
+```
+
+## Common Testing Issues
+
+### Issue: Webhook Not Received
+
+**Possible causes:**
+- Server not running
+- Firewall blocking requests
+- Incorrect URL
+- ngrok tunnel expired
+
+**Solution:**
+```bash
+# Check server is running
+curl http://localhost:3000/api/webhooks/card2crypto
+
+# Verify ngrok tunnel
+curl https://abc123.ngrok.io/api/webhooks/card2crypto
+
+# Check firewall settings
+# Make sure port 3000 is accessible
+```
+
+### Issue: Signature Verification Fails
+
+**Possible causes:**
+- Using wrong webhook secret
+- Body parsing modifies payload
+- Incorrect signature algorithm
+
+**Solution:**
+```javascript
+// Log the signature comparison
+console.log('Received signature:', receivedSignature);
+console.log('Expected signature:', expectedSignature);
+console.log('Payload:', JSON.stringify(payload));
+
+// Ensure you're using the webhook secret (not API key)
+const secret = process.env.WEBHOOK_SECRET; // Should start with "whsec_"
+```
+
+### Issue: Timeout Errors
+
+**Possible causes:**
+- Slow processing in webhook handler
+- Not returning 200 OK immediately
+- Database queries taking too long
+
+**Solution:**
+```javascript
+// Return 200 immediately, process async
+app.post('/webhooks', (req, res) => {
+  res.status(200).send('OK'); // Return immediately
+
+  // Process asynchronously
+  processWebhook(req.body).catch(error => {
+    console.error('Error processing webhook:', error);
+  });
+});
+```
+
+## Production Testing
+
+Before going live, test with real payments in production:
+
+1. Create a test shop in production
+2. Make a small real payment ($0.50 minimum)
+3. Verify webhook is received
+4. Check payment shows in dashboard
+5. Verify balance is credited
+
+Use your own credit card for testing to avoid issues.
+
+## Monitoring Webhooks
+
+Set up monitoring to track webhook health:
+
+```javascript
+// Log all webhooks
+app.post('/webhooks/card2crypto', (req, res) => {
+  const event = req.body;
+
+  // Log to monitoring service
+  monitoring.track('webhook_received', {
+    event: event.event,
+    payment_id: event.payment.id,
+    timestamp: new Date()
+  });
+
+  // Process webhook
+  handleWebhook(event);
+
+  res.status(200).send('OK');
+});
+
+// Alert on failures
+process.on('unhandledRejection', (error) => {
+  monitoring.alert('webhook_processing_failed', {
+    error: error.message,
+    stack: error.stack
+  });
+});
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Webhook Security"
+    icon="shield-check"
+    href="/webhooks/security"
+  >
+    Learn how to verify webhook signatures
+  </Card>
+  <Card
+    title="Webhook Events"
+    icon="list"
+    href="/webhooks/events"
+  >
+    Complete list of webhook event types
+  </Card>
+</CardGroup>

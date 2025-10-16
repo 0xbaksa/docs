@@ -1,0 +1,394 @@
+---
+title: 'Webhook Security'
+description: 'Verify webhook authenticity with HMAC signatures'
+---
+
+## Why Verify Webhooks?
+
+Anyone can send a POST request to your webhook endpoint. Without verification, a malicious actor could send fake payment notifications to your server.
+
+HMAC signatures ensure that webhooks are genuinely from Card2Crypto and haven't been tampered with.
+
+## How Signature Verification Works
+
+When Card2Crypto sends a webhook, we include an HMAC-SHA256 signature in the `X-Card2Crypto-Signature` header.
+
+This signature is generated using:
+1. Your webhook secret (from your shop settings)
+2. The complete webhook payload
+3. HMAC-SHA256 algorithm
+
+You can recreate this signature on your server and compare it to verify authenticity.
+
+## Verification Implementation
+
+### Node.js / JavaScript
+
+```javascript
+const crypto = require('crypto');
+
+function verifyWebhookSignature(payload, signature, secret) {
+  // Generate expected signature from payload
+  const expectedSignature = crypto
+    .createHmac('sha256', secret)
+    .update(JSON.stringify(payload))
+    .digest('hex');
+
+  // Compare signatures (timing-safe comparison)
+  return crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(expectedSignature)
+  );
+}
+
+// Express.js example
+app.post('/webhooks/card2crypto', express.json(), (req, res) => {
+  const signature = req.headers['x-card2crypto-signature'];
+  const webhookSecret = process.env.CARD2CRYPTO_WEBHOOK_SECRET;
+
+  // Verify signature before processing
+  if (!verifyWebhookSignature(req.body, signature, webhookSecret)) {
+    console.error('Invalid webhook signature');
+    return res.status(401).send('Invalid signature');
+  }
+
+  // Signature is valid - process webhook
+  const event = req.body;
+  console.log('Valid webhook received:', event.event);
+
+  res.status(200).send('OK');
+});
+```
+
+### PHP
+
+```php
+<?php
+
+function verifyWebhookSignature($payload, $signature, $secret) {
+    // Generate expected signature
+    $expectedSignature = hash_hmac(
+        'sha256',
+        json_encode($payload),
+        $secret
+    );
+
+    // Timing-safe comparison
+    return hash_equals($expectedSignature, $signature);
+}
+
+// Webhook endpoint
+$payload = json_decode(file_get_contents('php://input'), true);
+$signature = $_SERVER['HTTP_X_CARD2CRYPTO_SIGNATURE'];
+$webhookSecret = getenv('CARD2CRYPTO_WEBHOOK_SECRET');
+
+if (!verifyWebhookSignature($payload, $signature, $webhookSecret)) {
+    http_response_code(401);
+    die('Invalid signature');
+}
+
+// Signature is valid - process webhook
+error_log('Valid webhook received: ' . $payload['event']);
+http_response_code(200);
+echo 'OK';
+```
+
+### Python
+
+```python
+import hmac
+import hashlib
+import json
+from flask import Flask, request
+
+app = Flask(__name__)
+
+def verify_webhook_signature(payload, signature, secret):
+    """Verify HMAC signature from Card2Crypto"""
+    expected_signature = hmac.new(
+        secret.encode('utf-8'),
+        json.dumps(payload).encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
+
+    return hmac.compare_digest(expected_signature, signature)
+
+@app.route('/webhooks/card2crypto', methods=['POST'])
+def webhook():
+    payload = request.json
+    signature = request.headers.get('X-Card2Crypto-Signature')
+    webhook_secret = os.getenv('CARD2CRYPTO_WEBHOOK_SECRET')
+
+    if not verify_webhook_signature(payload, signature, webhook_secret):
+        return 'Invalid signature', 401
+
+    # Signature is valid - process webhook
+    print(f"Valid webhook received: {payload['event']}")
+    return 'OK', 200
+```
+
+## Common Mistakes
+
+### Mistake 1: Not Using Raw Body
+
+```javascript
+// WRONG - Body already parsed/modified
+app.use(express.json());
+app.post('/webhooks', (req, res) => {
+  const signature = generateSignature(req.body, secret);
+  // This will fail! req.body was modified by express.json()
+});
+
+// CORRECT - Verify before body parsing
+app.post('/webhooks', express.raw({ type: 'application/json' }), (req, res) => {
+  const signature = req.headers['x-card2crypto-signature'];
+  const payload = JSON.parse(req.body.toString());
+
+  // Now verification will work correctly
+  if (!verifyWebhookSignature(payload, signature, secret)) {
+    return res.status(401).send('Invalid signature');
+  }
+
+  res.status(200).send('OK');
+});
+```
+
+### Mistake 2: Using Wrong Secret
+
+```javascript
+// WRONG - Using API key instead of webhook secret
+const secret = 'c2c_live_abc123...'; // This is your API key!
+
+// CORRECT - Use webhook secret from shop settings
+const secret = 'whsec_abc123...'; // This is your webhook secret
+```
+
+### Mistake 3: Modifying Payload Before Verification
+
+```javascript
+// WRONG - Don't modify payload before verification
+app.post('/webhooks', (req, res) => {
+  req.body.processed_at = new Date(); // Modifies payload!
+
+  if (!verifyWebhookSignature(req.body, signature, secret)) {
+    // Will always fail - payload was modified
+    return res.status(401).send('Invalid signature');
+  }
+});
+
+// CORRECT - Verify first, then modify
+app.post('/webhooks', (req, res) => {
+  if (!verifyWebhookSignature(req.body, signature, secret)) {
+    return res.status(401).send('Invalid signature');
+  }
+
+  // Now it's safe to modify
+  req.body.processed_at = new Date();
+});
+```
+
+## Security Best Practices
+
+### 1. Always Verify Signatures
+
+Never skip signature verification, even in development:
+
+```javascript
+// BAD
+if (process.env.NODE_ENV === 'production') {
+  verifyWebhookSignature(payload, signature, secret);
+}
+
+// GOOD
+verifyWebhookSignature(payload, signature, secret);
+```
+
+### 2. Use HTTPS Only
+
+Always use HTTPS for your webhook endpoint. HTTP traffic can be intercepted and modified.
+
+```javascript
+// Configure your webhook URL in dashboard
+// Good: https://yoursite.com/webhooks/card2crypto
+// Bad:  http://yoursite.com/webhooks/card2crypto
+```
+
+### 3. Keep Secrets Secure
+
+Never commit webhook secrets to version control:
+
+```bash
+# .env (never commit this file)
+CARD2CRYPTO_WEBHOOK_SECRET=whsec_abc123...
+
+# .gitignore
+.env
+.env.local
+```
+
+### 4. Use Timing-Safe Comparison
+
+Always use timing-safe comparison to prevent timing attacks:
+
+```javascript
+// WRONG - Vulnerable to timing attacks
+if (signature === expectedSignature) {
+  // Process webhook
+}
+
+// CORRECT - Timing-safe comparison
+if (crypto.timingSafeEqual(
+  Buffer.from(signature),
+  Buffer.from(expectedSignature)
+)) {
+  // Process webhook
+}
+```
+
+### 5. Limit Request Size
+
+Prevent memory exhaustion attacks by limiting webhook payload size:
+
+```javascript
+app.post('/webhooks/card2crypto',
+  express.json({ limit: '1mb' }), // Limit to 1MB
+  (req, res) => {
+    // Handle webhook
+  }
+);
+```
+
+## Webhook Replay Protection
+
+Implement timestamp verification to prevent replay attacks:
+
+```javascript
+function verifyWebhook(payload, signature, secret) {
+  // 1. Verify signature
+  if (!verifyWebhookSignature(payload, signature, secret)) {
+    return { valid: false, error: 'Invalid signature' };
+  }
+
+  // 2. Check timestamp (reject if older than 5 minutes)
+  const webhookTime = new Date(payload.timestamp);
+  const now = new Date();
+  const fiveMinutes = 5 * 60 * 1000;
+
+  if (now - webhookTime > fiveMinutes) {
+    return { valid: false, error: 'Webhook too old' };
+  }
+
+  // 3. Check for duplicates (store processed payment IDs)
+  const paymentId = payload.payment.id;
+  if (await isWebhookProcessed(paymentId)) {
+    return { valid: false, error: 'Already processed' };
+  }
+
+  return { valid: true };
+}
+```
+
+## Testing Signature Verification
+
+Test your implementation using the "Test Webhook" button in your shop settings.
+
+Expected test payload:
+
+```json
+{
+  "event": "payment.completed",
+  "payment": {
+    "id": "test_payment_1729123456789",
+    "amount": 10.00,
+    "currency": "usd",
+    "status": "completed",
+    "customer_email": "test@example.com",
+    "customer_name": "Test Customer",
+    "metadata": {
+      "description": "Test payment for webhook verification"
+    },
+    "created_at": "2025-10-16T12:00:00Z",
+    "completed_at": "2025-10-16T12:00:00Z"
+  },
+  "shop": {
+    "id": "your_shop_id",
+    "shop_name": "Your Shop Name"
+  },
+  "timestamp": "2025-10-16T12:00:00Z"
+}
+```
+
+Your verification should succeed if:
+- You're using the correct webhook secret
+- You're properly generating the HMAC-SHA256 signature
+- You're not modifying the payload before verification
+
+## Troubleshooting
+
+### Signature Always Fails
+
+**Problem:** Verification always returns false, even for valid webhooks.
+
+**Solutions:**
+
+1. Check you're using the webhook secret (not API key):
+```javascript
+// Wrong
+const secret = 'c2c_live_abc123...'; // API key
+
+// Right
+const secret = 'whsec_abc123...'; // Webhook secret
+```
+
+2. Ensure you're not modifying the payload:
+```javascript
+// Use raw body for verification
+const payload = JSON.parse(req.body.toString());
+```
+
+3. Verify you're using HMAC-SHA256:
+```javascript
+crypto.createHmac('sha256', secret) // Correct algorithm
+```
+
+### Webhook Secret Not Working
+
+**Problem:** Can't find webhook secret or it doesn't work.
+
+**Solutions:**
+
+1. Go to [Dashboard > Shops](https://card2crypto.cc/dashboard/shops)
+2. Click your shop settings
+3. Find "Webhook Secret" section
+4. Click "Regenerate Secret" if needed
+5. Copy the new secret and update your environment variables
+
+### Test Webhook Fails
+
+**Problem:** Test webhook button shows verification failed.
+
+**Solutions:**
+
+1. Check your server logs for the actual error
+2. Ensure your endpoint is publicly accessible
+3. Verify you're returning `200 OK` status
+4. Test with a tool like ngrok if developing locally
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Webhook Events"
+    icon="list"
+    href="/webhooks/events"
+  >
+    Complete list of webhook event types
+  </Card>
+  <Card
+    title="Testing Webhooks"
+    icon="flask"
+    href="/webhooks/testing"
+  >
+    How to test webhooks in development
+  </Card>
+</CardGroup>

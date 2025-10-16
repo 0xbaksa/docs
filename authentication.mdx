@@ -1,0 +1,225 @@
+---
+title: 'Authentication'
+description: 'Learn how to authenticate API requests with your production API key'
+---
+
+## API Keys
+
+Card2Crypto uses API keys to authenticate requests. All requests must include your production API key in the `Authorization` header.
+
+### Key Format
+
+Production API keys follow this format:
+
+```
+c2c_live_[64-character-hexadecimal-string]
+```
+
+Example:
+```
+c2c_live_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f2
+```
+
+### Getting Your API Key
+
+1. Log in to your [Dashboard](https://card2crypto.cc/dashboard)
+2. Navigate to **API Keys**
+3. Create your shop (one per account)
+4. Copy your production API key
+
+<Warning>
+Your API key is shown only once during shop creation. Store it securely - if you lose it, you'll need to delete and recreate your shop.
+</Warning>
+
+## Making Authenticated Requests
+
+Include your API key in the `Authorization` header using the Bearer scheme:
+
+<CodeGroup>
+
+```bash cURL
+curl https://card2crypto.cc/api/v1/payments \
+  -H "Authorization: Bearer c2c_live_your_api_key_here" \
+  -H "Content-Type: application/json" \
+  -X POST \
+  -d '{
+    "amount": 5000,
+    "currency": "usd"
+  }'
+```
+
+```javascript JavaScript
+const response = await fetch('https://card2crypto.cc/api/v1/payments', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer c2c_live_your_api_key_here',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    amount: 5000,
+    currency: 'usd'
+  })
+});
+```
+
+```php PHP
+$ch = curl_init('https://card2crypto.cc/api/v1/payments');
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    'Authorization: Bearer c2c_live_your_api_key_here',
+    'Content-Type: application/json'
+]);
+```
+
+```python Python
+import requests
+
+headers = {
+    'Authorization': 'Bearer c2c_live_your_api_key_here',
+    'Content-Type': 'application/json'
+}
+
+response = requests.post(
+    'https://card2crypto.cc/api/v1/payments',
+    headers=headers,
+    json={'amount': 5000, 'currency': 'usd'}
+)
+```
+
+</CodeGroup>
+
+## Security Best Practices
+
+<AccordionGroup>
+  <Accordion title="Keep Keys Server-Side">
+    Never expose your API key in client-side JavaScript, mobile apps, or public repositories.
+
+    **Bad:**
+    ```html
+    <script>
+      // DON'T DO THIS
+      const apiKey = 'c2c_live_...';
+      fetch('/api/payments', {
+        headers: { 'Authorization': `Bearer ${apiKey}` }
+      });
+    </script>
+    ```
+
+    **Good:**
+    ```javascript
+    // Server-side (Node.js, PHP, Python, etc.)
+    const apiKey = process.env.CARD2CRYPTO_API_KEY;
+    ```
+  </Accordion>
+
+  <Accordion title="Use Environment Variables">
+    Store your API key in environment variables, never hard-code it:
+
+    ```bash .env
+    CARD2CRYPTO_API_KEY=c2c_live_your_api_key_here
+    ```
+
+    Then access it in your code:
+    ```javascript
+    const apiKey = process.env.CARD2CRYPTO_API_KEY;
+    ```
+  </Accordion>
+
+  <Accordion title="Rotate Keys if Compromised">
+    If your API key is exposed:
+    1. Delete your shop in the dashboard
+    2. Create a new shop to get a fresh API key
+    3. Update your integration with the new key
+
+    <Warning>
+    Deleting your shop will invalidate all existing API keys immediately.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="Restrict Access">
+    Only grant access to your API key to trusted team members. Consider:
+    - Using a secrets manager (AWS Secrets Manager, HashiCorp Vault)
+    - Implementing role-based access control
+    - Auditing who has access to production credentials
+  </Accordion>
+</AccordionGroup>
+
+## Authentication Errors
+
+### 401 Unauthorized
+
+Returned when the API key is missing, invalid, or malformed.
+
+```json
+{
+  "error": "Invalid API key"
+}
+```
+
+**Common causes:**
+- Missing `Authorization` header
+- Incorrect key format (not `c2c_live_...`)
+- Using a deleted or expired key
+- Key belongs to inactive seller account
+
+### 403 Forbidden
+
+Returned when the seller account is inactive or suspended.
+
+```json
+{
+  "error": "Seller account inactive"
+}
+```
+
+**Resolution:**
+Contact support at support@card2crypto.cc if your account is unexpectedly inactive.
+
+## Testing Authentication
+
+Use this simple test to verify your API key works:
+
+<CodeGroup>
+
+```bash cURL
+curl https://card2crypto.cc/api/v1/payments/test \
+  -H "Authorization: Bearer c2c_live_your_api_key_here"
+```
+
+```javascript JavaScript
+const response = await fetch('https://card2crypto.cc/api/v1/payments/test', {
+  headers: {
+    'Authorization': 'Bearer c2c_live_your_api_key_here'
+  }
+});
+
+if (response.ok) {
+  console.log('Authentication successful!');
+} else {
+  console.error('Authentication failed:', await response.text());
+}
+```
+
+</CodeGroup>
+
+## One Shop Per Account
+
+<Note>
+Card2Crypto enforces a **one shop per seller account** limit. This means:
+- You get one production API key
+- All payments go through this single shop
+- If you need multiple shops, create separate seller accounts
+
+This simplifies management and ensures clean separation of business entities.
+</Note>
+
+## Next Steps
+
+Now that you understand authentication, learn how to create payments:
+
+<Card
+  title="Create a Payment"
+  icon="credit-card"
+  href="/api-reference/payments/create"
+>
+  Learn how to process your first payment
+</Card>

@@ -1,0 +1,418 @@
+---
+title: 'Create Payment'
+description: 'Create a new payment and generate a checkout URL'
+api: 'POST https://card2crypto.cc/api/v1/payments'
+---
+
+## Endpoint
+
+```
+POST /api/v1/payments
+```
+
+Creates a new payment and returns a checkout URL where customers can complete the payment.
+
+## Request
+
+### Headers
+
+| Header | Required | Description |
+|--------|----------|-------------|
+| `Authorization` | Yes | Bearer token with your API key |
+| `Content-Type` | Yes | Must be `application/json` |
+| `Idempotency-Key` | No | Unique key to prevent duplicate payments |
+
+### Body Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `amount` | integer | Yes | Payment amount in cents (e.g., 10000 = $100.00). Minimum: 50 ($0.50) |
+| `currency` | string | Yes | Currency code. Currently only `"usd"` is supported |
+| `return_url` | string | Yes | URL to redirect customer after payment completion |
+| `customer_email` | string | No | Customer's email address for receipts |
+| `customer_name` | string | No | Customer's name for receipts |
+| `metadata` | object | No | Custom data to attach to this payment (max 50 keys) |
+
+### Example Request
+
+```bash
+curl -X POST https://card2crypto.cc/api/v1/payments \
+  -H "Authorization: Bearer c2c_live_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "amount": 10000,
+    "currency": "usd",
+    "return_url": "https://yoursite.com/success",
+    "customer_email": "customer@example.com",
+    "customer_name": "John Doe",
+    "metadata": {
+      "order_id": "1234",
+      "product": "Premium Plan"
+    }
+  }'
+```
+
+## Response
+
+### Success Response (200 OK)
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "pay_abc123xyz789",
+    "amount": 10000,
+    "currency": "usd",
+    "status": "pending",
+    "checkout_url": "https://card2crypto.cc/checkout/pay_abc123xyz789",
+    "customer_email": "customer@example.com",
+    "customer_name": "John Doe",
+    "metadata": {
+      "order_id": "1234",
+      "product": "Premium Plan"
+    },
+    "created_at": "2025-10-16T12:00:00Z"
+  }
+}
+```
+
+### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique payment identifier |
+| `amount` | integer | Payment amount in cents |
+| `currency` | string | Currency code |
+| `status` | string | Payment status: `pending`, `completed`, `failed`, or `refunded` |
+| `checkout_url` | string | URL to redirect customer for payment |
+| `customer_email` | string | Customer's email (if provided) |
+| `customer_name` | string | Customer's name (if provided) |
+| `metadata` | object | Custom data attached to payment |
+| `created_at` | string | ISO 8601 timestamp when payment was created |
+
+## Error Responses
+
+### 400 Bad Request
+
+Invalid parameters:
+
+```json
+{
+  "success": false,
+  "error": "Amount must be at least 50 cents"
+}
+```
+
+Common validation errors:
+- Amount less than 50 cents
+- Invalid currency (only USD supported)
+- Missing required fields
+- Invalid return_url format
+- Metadata exceeds 50 keys
+
+### 401 Unauthorized
+
+Invalid or missing API key:
+
+```json
+{
+  "success": false,
+  "error": "Invalid API key"
+}
+```
+
+Possible causes:
+- API key not provided in Authorization header
+- API key format is incorrect
+- API key doesn't exist or was deleted
+- Shop is inactive
+
+### 429 Too Many Requests
+
+Rate limit exceeded:
+
+```json
+{
+  "success": false,
+  "error": "Rate limit exceeded. Try again in 30 seconds."
+}
+```
+
+See [Rate Limits](/resources/rate-limits) for details.
+
+### 500 Internal Server Error
+
+Server error:
+
+```json
+{
+  "success": false,
+  "error": "An unexpected error occurred"
+}
+```
+
+If this persists, contact support.
+
+## Next Steps
+
+After creating a payment:
+
+1. **Redirect customer to checkout_url**
+   ```javascript
+   const payment = await createPayment();
+   window.location.href = payment.data.checkout_url;
+   ```
+
+2. **Customer completes payment** on the white-labeled checkout page
+
+3. **Customer redirected back** to your return_url with payment ID:
+   ```
+   https://yoursite.com/success?payment_id=pay_abc123xyz789
+   ```
+
+4. **Webhook sent to your server** with payment details (if configured)
+
+5. **Verify payment status** by retrieving the payment:
+   ```bash
+   GET /api/v1/payments/pay_abc123xyz789
+   ```
+
+## Implementation Examples
+
+### Node.js / Express
+
+```javascript
+const express = require('express');
+const fetch = require('node-fetch');
+
+const app = express();
+const API_KEY = process.env.CARD2CRYPTO_API_KEY;
+
+app.post('/create-payment', async (req, res) => {
+  try {
+    const { amount, email, name, orderId } = req.body;
+
+    const response = await fetch('https://card2crypto.cc/api/v1/payments', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        amount: amount,
+        currency: 'usd',
+        return_url: `${req.protocol}://${req.get('host')}/success`,
+        customer_email: email,
+        customer_name: name,
+        metadata: {
+          order_id: orderId
+        }
+      })
+    });
+
+    const payment = await response.json();
+
+    if (payment.success) {
+      // Redirect customer to checkout
+      res.redirect(payment.data.checkout_url);
+    } else {
+      res.status(400).json({ error: payment.error });
+    }
+
+  } catch (error) {
+    console.error('Payment creation failed:', error);
+    res.status(500).json({ error: 'Failed to create payment' });
+  }
+});
+```
+
+### PHP
+
+```php
+<?php
+
+function createPayment($amount, $email, $name, $orderId) {
+    $apiKey = getenv('CARD2CRYPTO_API_KEY');
+
+    $data = [
+        'amount' => $amount,
+        'currency' => 'usd',
+        'return_url' => 'https://yoursite.com/success',
+        'customer_email' => $email,
+        'customer_name' => $name,
+        'metadata' => [
+            'order_id' => $orderId
+        ]
+    ];
+
+    $ch = curl_init('https://card2crypto.cc/api/v1/payments');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Authorization: Bearer ' . $apiKey,
+        'Content-Type: application/json'
+    ]);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    $result = json_decode($response, true);
+
+    if ($httpCode === 200 && $result['success']) {
+        // Redirect to checkout
+        header('Location: ' . $result['data']['checkout_url']);
+        exit;
+    } else {
+        throw new Exception($result['error'] ?? 'Failed to create payment');
+    }
+}
+
+// Usage
+try {
+    createPayment(10000, 'customer@example.com', 'John Doe', '1234');
+} catch (Exception $e) {
+    echo 'Error: ' . $e->getMessage();
+}
+```
+
+### Python / Flask
+
+```python
+import os
+import requests
+from flask import Flask, request, redirect
+
+app = Flask(__name__)
+API_KEY = os.getenv('CARD2CRYPTO_API_KEY')
+
+@app.route('/create-payment', methods=['POST'])
+def create_payment():
+    try:
+        data = request.json
+
+        response = requests.post(
+            'https://card2crypto.cc/api/v1/payments',
+            headers={
+                'Authorization': f'Bearer {API_KEY}',
+                'Content-Type': 'application/json'
+            },
+            json={
+                'amount': data['amount'],
+                'currency': 'usd',
+                'return_url': request.url_root + 'success',
+                'customer_email': data.get('email'),
+                'customer_name': data.get('name'),
+                'metadata': {
+                    'order_id': data['order_id']
+                }
+            }
+        )
+
+        payment = response.json()
+
+        if payment['success']:
+            return redirect(payment['data']['checkout_url'])
+        else:
+            return {'error': payment['error']}, 400
+
+    except Exception as e:
+        return {'error': str(e)}, 500
+```
+
+## Metadata Usage
+
+Use metadata to attach custom data to payments. This data is returned in webhooks and when retrieving payments.
+
+### Best Practices
+
+```javascript
+// Good - Store identifiers to link with your system
+{
+  "metadata": {
+    "order_id": "1234",
+    "user_id": "5678",
+    "product_id": "premium_plan",
+    "subscription_period": "monthly"
+  }
+}
+
+// Bad - Don't store sensitive data
+{
+  "metadata": {
+    "credit_card": "4242...",      // Never!
+    "password": "secret123",        // Never!
+    "api_key": "sk_live_..."       // Never!
+  }
+}
+```
+
+### Metadata Limits
+
+- Maximum 50 keys per payment
+- Keys must be strings
+- Values must be strings, numbers, or booleans
+- Total metadata size limit: 5KB
+
+## Idempotency
+
+Prevent duplicate payments by including an idempotency key:
+
+```bash
+curl -X POST https://card2crypto.cc/api/v1/payments \
+  -H "Authorization: Bearer c2c_live_..." \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: order_1234_attempt_1" \
+  -d '{
+    "amount": 10000,
+    "currency": "usd",
+    "return_url": "https://yoursite.com/success"
+  }'
+```
+
+Benefits:
+- Safe to retry failed requests
+- Prevents duplicate charges if request times out
+- Guarantees exactly-once payment creation
+
+Keys expire after 24 hours.
+
+## Testing
+
+Use real API keys to create test payments with small amounts ($0.50 minimum).
+
+See [Testing Guide](/resources/testing) for details.
+
+## Related Resources
+
+<CardGroup cols={2}>
+  <Card
+    title="Retrieve Payment"
+    icon="file-invoice-dollar"
+    href="/api-reference/payments/retrieve"
+  >
+    Check payment status after creation
+  </Card>
+  <Card
+    title="Webhook Overview"
+    icon="webhook"
+    href="/webhooks/overview"
+  >
+    Get real-time payment notifications
+  </Card>
+  <Card
+    title="Node.js Guide"
+    icon="node-js"
+    href="/guides/nodejs"
+  >
+    Complete integration tutorial
+  </Card>
+  <Card
+    title="Error Reference"
+    icon="triangle-exclamation"
+    href="/resources/errors"
+  >
+    Complete list of error codes
+  </Card>
+</CardGroup>

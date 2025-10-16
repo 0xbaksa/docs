@@ -1,0 +1,455 @@
+---
+title: 'Frequently Asked Questions'
+description: 'Common questions about Card2Crypto'
+---
+
+## General Questions
+
+### What is Card2Crypto?
+
+Card2Crypto is a payment gateway that allows you to accept credit card payments from customers and receive payouts in cryptocurrency (Bitcoin or Litecoin). No KYC required, no bank account needed.
+
+### How does it work?
+
+1. Customer pays with credit card on your white-labeled checkout page
+2. Payment is processed through our secure processor
+3. Your seller balance is credited (payment amount - 15% fee)
+4. You can withdraw your balance to Bitcoin or Litecoin at any time
+
+### Is KYC required?
+
+No. Card2Crypto does not require identity verification for sellers or customers.
+
+### What countries are supported?
+
+Customers can be from any country.
+
+## Fees & Pricing
+
+### What are the fees?
+
+Card2Crypto charges a flat **15% platform fee** on all successful transactions. This includes:
+- Payment gateway infrastructure
+- Webhook delivery
+- Crypto withdrawal processing
+- Credit card processing fees
+
+### Are there any hidden fees?
+
+No hidden fees. The only costs are:
+- 15% platform fee on transactions
+- Blockchain network fees when withdrawing to crypto
+
+### What is the minimum payment amount?
+
+**$0.50 USD** minimum per transaction.
+
+### What is the minimum withdrawal amount?
+
+**$10.00 USD** minimum balance required to request a crypto withdrawal.
+
+### Can I get a refund of the platform fee?
+
+Yes. If a payment is refunded, the 15% platform fee is returned to your balance.
+
+## Payments
+
+### What payment methods are accepted?
+
+All major credit and debit cards:
+- Visa
+- Mastercard
+- American Express
+- Discover
+
+### How long does it take for payments to complete?
+
+Most payments complete within 30-60 seconds after the customer enters their card details.
+
+### When is my balance credited?
+
+Your balance is credited immediately when a payment completes successfully.
+
+### Can customers pay with cryptocurrency?
+
+No. Customers pay with credit cards. Only sellers receive crypto payouts.
+
+### What happens if a payment fails?
+
+If a payment fails:
+- No fees are charged
+- Customer can try a different card
+- Payment status shows as "failed" in dashboard
+- You can create a new payment for the customer to try again
+
+## API & Integration
+
+### How do I get started?
+
+1. Sign up at [card2crypto.cc](https://card2crypto.cc)
+2. Complete seller onboarding
+3. Wait for approval (usually 24-48 hours)
+4. Create your shop and get API keys
+5. Integrate using our [Quickstart Guide](/quickstart)
+
+### What programming languages are supported?
+
+Card2Crypto provides a REST API that works with any language. We have guides for:
+- [Node.js](/guides/nodejs)
+- [PHP](/guides/php)
+- Python (coming soon)
+
+Any language that can make HTTP requests will work.
+
+### Do I need a webhook endpoint?
+
+Webhooks are highly recommended but not required. Without webhooks, you'll need to poll the API to check payment status, which is less efficient.
+
+### How do I test my integration?
+
+Card2Crypto operates in production mode only. Test with:
+- Small payment amounts ($0.50 minimum)
+- Your own credit cards
+- Real API keys
+
+See [Testing Guide](/resources/testing) for details.
+
+### Can I use test mode?
+
+No. Card2Crypto only has production mode. All payments are real transactions.
+
+## Security
+
+### Is Card2Crypto secure?
+
+Yes. Security features include:
+- secure payment processing (PCI Level 1 certified)
+- HTTPS encryption for all connections
+- HMAC-SHA256 webhook signatures
+- API key authentication
+- No credit card data stored on your servers
+
+### Do I need to be PCI compliant?
+
+No. Card details go directly from customer to our secure processor. Your server never touches credit card data, so you don't need PCI certification.
+
+### How do I verify webhooks are authentic?
+
+All webhooks include an HMAC-SHA256 signature in the `X-Card2Crypto-Signature` header. Verify this signature using your webhook secret.
+
+See [Webhook Security](/webhooks/security) for implementation details.
+
+### What if someone steals my API key?
+
+If your API key is compromised:
+1. Go to your shop settings
+2. Click "Regenerate API Key"
+3. Update your application with the new key
+4. The old key will be immediately invalidated
+
+### How do i secure my API keys?
+
+Always store API keys in environment variables and add `.env` to your `.gitignore` file.
+
+## Withdrawals
+
+### How do I withdraw my balance?
+
+1. Go to [Dashboard > Balance](https://card2crypto.cc/dashboard/balance)
+2. Click "Request Withdrawal"
+3. Enter your Bitcoin or Litecoin address
+4. Enter the amount to withdraw
+5. Submit request
+6. Admin approves and processes withdrawal (usually within 24 hours)
+
+### What cryptocurrencies can I withdraw to?
+
+- Bitcoin (BTC)
+- Litecoin (LTC)
+
+### How long do withdrawals take?
+
+Withdrawals are typically processed within 24 hours of request. Blockchain confirmation time varies:
+- Bitcoin: 10-60 minutes
+- Litecoin: 2.5-15 minutes
+
+### What are the withdrawal fees?
+
+No platform fee. You only pay the blockchain network fee:
+- Bitcoin: ~$1-5 (variable based on network congestion)
+- Litecoin: ~$0.01-0.50 (variable based on network congestion)
+
+### Should I use Bitcoin or Litecoin?
+
+For smaller withdrawals, Litecoin is often better due to lower fees. For larger withdrawals, either works well.
+
+```
+$100 withdrawal:
+  Bitcoin:  Receive ~$95-99 (1-5% in fees)
+  Litecoin: Receive ~$99.50-99.90 (0.1-0.5% in fees)
+
+$10,000 withdrawal:
+  Bitcoin:  Receive ~$9,995-9,999 (0.01-0.05% in fees)
+  Litecoin: Receive ~$9,999.50-9,999.90 (0.001-0.005% in fees)
+```
+
+## Checkout Experience
+
+### Can I customize the checkout page?
+
+Currently, you can customize:
+- Shop name (displayed on checkout)
+- Return URL (where customer goes after payment)
+
+Logo and color customization coming soon.
+
+### Is the checkout page mobile-friendly?
+
+Yes. The checkout page is fully responsive and works on all devices.
+
+### What information do customers see?
+
+Customers see:
+- Your shop name
+- Payment amount
+- Credit card form
+- Secure payment badge
+
+They do NOT see:
+- Your API keys
+- Cryptocurrency mentions
+- Your payout details
+
+### Can customers cancel a payment?
+
+Yes. Customers can close the checkout page at any time. If they don't complete payment, the status remains "pending" and no charge occurs.
+
+### Do checkout URLs expire?
+
+No. Checkout URLs don't expire, but best practice is to generate a fresh URL for each payment attempt.
+
+## Webhooks
+
+### What webhook events are sent?
+
+- `payment.completed` - Payment succeeded
+- `payment.failed` - Payment failed
+- `payment.refunded` - Payment was refunded
+
+### How many times will a webhook be retried?
+
+Failed webhooks are retried 3 times with exponential backoff:
+- Retry 1: After 2 seconds
+- Retry 2: After 4 seconds
+- Retry 3: After 8 seconds (final attempt)
+
+### Can I receive webhooks for test payments?
+
+Yes. All payments (including small test payments) trigger webhooks.
+
+### How do I test webhooks locally?
+
+Use ngrok or a similar tool to expose your local server:
+
+```bash
+# Start your server
+npm start
+
+# Start ngrok
+ngrok http 3000
+
+# Use ngrok URL in webhook settings
+https://abc123.ngrok.io/webhooks/card2crypto
+```
+
+See [Webhook Testing](/webhooks/testing) for details.
+
+## Troubleshooting
+
+### Why isn't my webhook being called?
+
+Check:
+1. Is your webhook URL correct and publicly accessible?
+2. Is your server running and accepting POST requests?
+3. Are there firewall rules blocking Card2Crypto?
+4. Check webhook logs in your dashboard for error details
+
+### Why is signature verification failing?
+
+Common causes:
+1. Using wrong webhook secret (not API key)
+2. Body parsing middleware modifying the payload
+3. Using wrong hashing algorithm (must be HMAC-SHA256)
+
+See [Webhook Security](/webhooks/security) for correct implementation.
+
+### Why am I getting rate limited?
+
+The API limits requests to 100 per minute per API key. Solutions:
+- Implement request queuing
+- Use exponential backoff for retries
+- Cache API responses
+- Use webhooks instead of polling
+
+See [Rate Limits](/resources/rate-limits) for details.
+
+### Why is my payment failing?
+
+Common causes:
+- Amount below $0.50 minimum
+- Invalid API key
+- Missing return_url
+- Invalid currency (must be "usd")
+- Card declined by processor
+
+Check the error message for specific details.
+
+### How do I get support?
+
+- Check this FAQ
+- Read the [documentation](/introduction)
+- Contact support through your dashboard
+- Email support (check dashboard for contact info)
+
+## Business Questions
+
+### Can I have multiple shops?
+
+No. Each seller account is limited to one shop. This ensures focused business operations and simpler account management.
+
+### Can I sell digital products?
+
+Yes. Card2Crypto works for any type of product or service:
+- Digital products
+- Physical goods
+- Subscriptions
+- Services
+- Donations
+
+### Can I process recurring payments?
+
+Not currently. Recurring/subscription billing is not supported yet.
+
+### Can I issue refunds?
+
+Yes, but only admins can process refunds. Contact support with the payment ID to request a refund.
+
+### Is there a transaction volume limit?
+
+No hard limits. Process as many transactions as your business needs.
+
+### Do you offer enterprise plans?
+
+Enterprise features may be available for high-volume merchants. Contact support to discuss your needs.
+
+## Legal & Compliance
+
+### Who owns the customer data?
+
+You own the customer data you collect. Card2Crypto only stores data necessary for payment processing.
+
+### What happens if I receive a chargeback?
+
+Chargebacks are handled by us. If a chargeback occurs:
+1. You're notified via email & dashboard
+2. Amount is debited from your balance (if positive) or you owe the amount
+3. You can provide evidence to dispute the chargeback
+
+## Account Management
+
+### How long does approval take?
+
+Seller approval typically takes 24-48 hours after completing onboarding.
+
+### Why was my account rejected?
+
+Common reasons:
+- Incomplete onboarding information
+- Suspicious activity
+- Invalid information provided
+
+Contact support for specific details about your account.
+
+### How do I update my withdrawal address?
+
+You enter your Bitcoin or Litecoin address each time you request a withdrawal. No need to save it in settings.
+
+### Can I change my shop name?
+
+Yes. Go to your shop settings and update the shop name. It will be reflected on future checkout pages.
+
+## Technical Questions
+
+### What API version should I use?
+
+Always use the latest version: `v1`
+
+Base URL: `https://card2crypto.cc/api/v1`
+
+### How do I handle idempotency?
+
+Include an `Idempotency-Key` header with a unique value:
+
+```javascript
+headers: {
+  'Authorization': 'Bearer c2c_live_...',
+  'Idempotency-Key': 'unique_order_123'
+}
+```
+
+Requests with the same key within 24 hours return the same result.
+
+### Can I make API calls from the frontend?
+
+**No!** Never expose API keys in frontend code. Always make API calls from your backend server.
+
+### What should I do with the payment ID in the return URL?
+
+Retrieve the payment to verify its status:
+
+```javascript
+app.get('/success', async (req, res) => {
+  const payment = await getPayment(req.query.payment_id);
+
+  if (payment.status === 'completed') {
+    // Grant access to product
+  }
+});
+```
+
+### How do I handle concurrent payments?
+
+No special handling needed. Each payment is independent. You can create multiple payments simultaneously without issues.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Get Started"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Start integrating Card2Crypto
+  </Card>
+  <Card
+    title="API Reference"
+    icon="code"
+    href="/api-reference/introduction"
+  >
+    Complete API documentation
+  </Card>
+  <Card
+    title="Integration Guides"
+    icon="book"
+    href="/guides/nodejs"
+  >
+    Step-by-step tutorials
+  </Card>
+  <Card
+    title="Contact Support"
+    icon="envelope"
+    href="https://card2crypto.cc/dashboard"
+  >
+    Get help from our team
+  </Card>
+</CardGroup>

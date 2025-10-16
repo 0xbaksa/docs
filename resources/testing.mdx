@@ -1,0 +1,585 @@
+---
+title: 'Testing Guide'
+description: 'How to test your Card2Crypto integration'
+---
+
+## Testing Overview
+
+Card2Crypto operates in production mode only. All payments are real transactions that will be charged to credit cards.
+
+For testing, use:
+- Small payment amounts (minimum $0.50)
+- Your own credit cards
+- Real API keys from your shop
+
+## Testing Strategy
+
+### 1. Development Testing
+
+Test basic integration with minimal costs:
+
+```javascript
+// Use minimum amount for testing
+const testPayment = await createPayment({
+  amount: 50, // $0.50 - minimum amount
+  currency: 'usd',
+  return_url: 'http://localhost:3000/success',
+  metadata: {
+    test: true,
+    environment: 'development'
+  }
+});
+```
+
+### 2. Staging Environment
+
+Set up a staging environment that mirrors production:
+
+```bash
+# .env.staging
+CARD2CRYPTO_API_KEY=c2c_live_your_staging_key
+CARD2CRYPTO_WEBHOOK_SECRET=your_staging_webhook_secret
+NODE_ENV=staging
+```
+
+### 3. Production Testing
+
+Before going live:
+1. Test with real small payments ($0.50-$1.00)
+2. Verify all payment flows
+3. Test webhook delivery
+4. Check refund process
+
+## Test Scenarios
+
+### Basic Payment Flow
+
+```javascript
+describe('Payment Flow', () => {
+  it('creates payment and redirects to checkout', async () => {
+    // 1. Create payment
+    const payment = await createPayment({
+      amount: 50,
+      currency: 'usd',
+      return_url: 'https://test.com/success'
+    });
+
+    // 2. Verify response
+    expect(payment.id).toBeDefined();
+    expect(payment.checkout_url).toMatch(/^https:\/\/card2crypto\.com\/checkout\//);
+    expect(payment.status).toBe('pending');
+
+    // 3. Test checkout redirect
+    // Manually complete payment in browser with test card
+    // Or use automated browser testing (Playwright/Puppeteer)
+  });
+});
+```
+
+### Payment Retrieval
+
+```javascript
+describe('Payment Retrieval', () => {
+  it('retrieves payment by ID', async () => {
+    // Create payment
+    const created = await createPayment({
+      amount: 100,
+      currency: 'usd',
+      return_url: 'https://test.com/success'
+    });
+
+    // Retrieve payment
+    const retrieved = await getPayment(created.id);
+
+    // Verify match
+    expect(retrieved.id).toBe(created.id);
+    expect(retrieved.amount).toBe(100);
+    expect(retrieved.status).toBe('pending');
+  });
+});
+```
+
+### Webhook Handling
+
+```javascript
+describe('Webhook Handler', () => {
+  it('processes payment.completed event', async () => {
+    const event = {
+      event: 'payment.completed',
+      payment: {
+        id: 'pay_test123',
+        amount: 100.00,
+        status: 'completed',
+        metadata: { order_id: '1234' }
+      },
+      shop: {
+        id: 'shop_test',
+        shop_name: 'Test Shop'
+      },
+      timestamp: new Date().toISOString()
+    };
+
+    // Test webhook processing
+    await processWebhook(event);
+
+    // Verify order was updated
+    const order = await db.orders.findOne({ id: '1234' });
+    expect(order.status).toBe('paid');
+  });
+
+  it('verifies webhook signature', () => {
+    const payload = { event: 'payment.completed', payment: {...} };
+    const secret = 'test_secret';
+
+    // Generate valid signature
+    const signature = crypto
+      .createHmac('sha256', secret)
+      .update(JSON.stringify(payload))
+      .digest('hex');
+
+    // Test verification
+    expect(verifyWebhookSignature(payload, signature, secret)).toBe(true);
+
+    // Test invalid signature
+    expect(verifyWebhookSignature(payload, 'invalid', secret)).toBe(false);
+  });
+});
+```
+
+### Error Handling
+
+```javascript
+describe('Error Handling', () => {
+  it('handles invalid API key', async () => {
+    const invalidClient = new Card2Crypto('invalid_key');
+
+    await expect(
+      invalidClient.createPayment({ amount: 100, currency: 'usd', return_url: 'https://test.com' })
+    ).rejects.toThrow('Invalid API key');
+  });
+
+  it('handles amount below minimum', async () => {
+    await expect(
+      createPayment({ amount: 49, currency: 'usd', return_url: 'https://test.com' })
+    ).rejects.toThrow('Amount must be at least 50 cents');
+  });
+
+  it('handles rate limit', async () => {
+    // Make 105 requests rapidly
+    const requests = Array(105).fill(null).map(() =>
+      getPayment('pay_test123').catch(e => e)
+    );
+
+    const results = await Promise.all(requests);
+    const rateLimitErrors = results.filter(r =>
+      r instanceof Error && r.message.includes('Rate limit')
+    );
+
+    expect(rateLimitErrors.length).toBeGreaterThan(0);
+  });
+});
+```
+
+## Manual Testing Checklist
+
+### Payment Creation
+
+- [ ] Create payment with minimum amount ($0.50)
+- [ ] Create payment with metadata
+- [ ] Create payment with customer email and name
+- [ ] Verify checkout URL is generated
+- [ ] Verify payment shows in dashboard
+
+### Checkout Flow
+
+- [ ] Access checkout URL
+- [ ] Verify shop name is displayed
+- [ ] Enter credit card details
+- [ ] Complete payment successfully
+- [ ] Verify redirect to return URL
+- [ ] Check payment ID in URL parameters
+
+### Payment Status
+
+- [ ] Retrieve payment after creation (status: pending)
+- [ ] Retrieve payment after completion (status: completed)
+- [ ] Verify payment details match
+
+### Webhook Delivery
+
+- [ ] Configure webhook URL in dashboard
+- [ ] Complete a test payment
+- [ ] Verify webhook is received
+- [ ] Check webhook signature is valid
+- [ ] Verify webhook payload is correct
+- [ ] Test webhook retry (return non-200 status)
+
+### Dashboard
+
+- [ ] View payments in dashboard
+- [ ] Check payment details
+- [ ] Verify balance is credited
+- [ ] Request withdrawal (minimum $10)
+
+## Automated Testing
+
+### Unit Tests
+
+```javascript
+// tests/card2crypto.test.js
+const Card2Crypto = require('../lib/card2crypto');
+
+describe('Card2Crypto Client', () => {
+  const apiKey = process.env.CARD2CRYPTO_API_KEY;
+  const client = new Card2Crypto(apiKey);
+
+  test('creates payment', async () => {
+    const payment = await client.createPayment({
+      amount: 50,
+      currency: 'usd',
+      return_url: 'https://test.com/success',
+      metadata: { test: true }
+    });
+
+    expect(payment).toMatchObject({
+      id: expect.stringMatching(/^pay_/),
+      amount: 50,
+      currency: 'usd',
+      status: 'pending',
+      checkout_url: expect.stringContaining('card2crypto.cc/checkout/')
+    });
+  });
+
+  test('retrieves payment', async () => {
+    const created = await client.createPayment({
+      amount: 100,
+      currency: 'usd',
+      return_url: 'https://test.com/success'
+    });
+
+    const retrieved = await client.getPayment(created.id);
+
+    expect(retrieved.id).toBe(created.id);
+  });
+});
+```
+
+### Integration Tests
+
+```javascript
+// tests/integration.test.js
+const request = require('supertest');
+const app = require('../app');
+
+describe('Payment Integration', () => {
+  test('complete payment flow', async () => {
+    // 1. Create payment via API
+    const createResponse = await request(app)
+      .post('/api/payments')
+      .send({
+        amount: 50,
+        product: 'Test Product',
+        email: 'test@example.com'
+      });
+
+    expect(createResponse.status).toBe(200);
+    const { payment_id, checkout_url } = createResponse.body;
+
+    // 2. Manually complete payment (or use browser automation)
+    // ... complete payment on checkout page ...
+
+    // 3. Verify payment status
+    const statusResponse = await request(app)
+      .get(`/api/payments/${payment_id}`);
+
+    expect(statusResponse.body.status).toBe('completed');
+  });
+});
+```
+
+### Webhook Tests
+
+```javascript
+// tests/webhook.test.js
+const crypto = require('crypto');
+const request = require('supertest');
+const app = require('../app');
+
+describe('Webhook Handler', () => {
+  const webhookSecret = process.env.CARD2CRYPTO_WEBHOOK_SECRET;
+
+  function signPayload(payload) {
+    return crypto
+      .createHmac('sha256', webhookSecret)
+      .update(JSON.stringify(payload))
+      .digest('hex');
+  }
+
+  test('accepts valid webhook', async () => {
+    const payload = {
+      event: 'payment.completed',
+      payment: {
+        id: 'pay_test123',
+        amount: 100.00,
+        status: 'completed',
+        metadata: { order_id: '1234' }
+      },
+      shop: { id: 'shop_test', shop_name: 'Test' },
+      timestamp: new Date().toISOString()
+    };
+
+    const signature = signPayload(payload);
+
+    const response = await request(app)
+      .post('/webhooks/card2crypto')
+      .set('X-Card2Crypto-Signature', signature)
+      .send(payload);
+
+    expect(response.status).toBe(200);
+  });
+
+  test('rejects invalid signature', async () => {
+    const payload = {
+      event: 'payment.completed',
+      payment: { id: 'pay_test', amount: 100 }
+    };
+
+    const response = await request(app)
+      .post('/webhooks/card2crypto')
+      .set('X-Card2Crypto-Signature', 'invalid_signature')
+      .send(payload);
+
+    expect(response.status).toBe(401);
+  });
+});
+```
+
+## Browser Testing
+
+Use Playwright or Puppeteer to test checkout flow:
+
+```javascript
+// tests/checkout.e2e.js
+const { chromium } = require('playwright');
+
+describe('Checkout Flow', () => {
+  it('completes payment', async () => {
+    const browser = await chromium.launch();
+    const page = await browser.newPage();
+
+    // 1. Create payment
+    const payment = await createPayment({ amount: 50, ... });
+
+    // 2. Navigate to checkout
+    await page.goto(payment.checkout_url);
+
+    // 3. Fill card details
+    await page.fill('[name="cardnumber"]', '4242424242424242');
+    await page.fill('[name="exp-date"]', '12/34');
+    await page.fill('[name="cvc"]', '123');
+    await page.fill('[name="postal"]', '12345');
+
+    // 4. Submit payment
+    await page.click('button[type="submit"]');
+
+    // 5. Wait for redirect
+    await page.waitForURL(/payment-complete/);
+
+    // 6. Verify success
+    const url = page.url();
+    expect(url).toContain('payment_id=');
+
+    await browser.close();
+  });
+});
+```
+
+## Local Development Setup
+
+### 1. Use ngrok for Webhooks
+
+```bash
+# Start your server
+npm start
+
+# In another terminal, start ngrok
+ngrok http 3000
+
+# Use ngrok URL in Card2Crypto dashboard
+https://abc123.ngrok.io/webhooks/card2crypto
+```
+
+### 2. Test Webhook Delivery
+
+```bash
+# Use the "Test Webhook" button in dashboard
+# Or manually send webhook with cURL:
+
+curl -X POST http://localhost:3000/webhooks/card2crypto \
+  -H "Content-Type: application/json" \
+  -H "X-Card2Crypto-Signature: $(echo -n '{...}' | openssl dgst -sha256 -hmac 'your_secret' | cut -d' ' -f2)" \
+  -d '{
+    "event": "payment.completed",
+    "payment": {...}
+  }'
+```
+
+## Test Data
+
+### Test Payment Amounts
+
+```javascript
+const TEST_AMOUNTS = {
+  minimum: 50,          // $0.50 - minimum valid amount
+  small: 100,           // $1.00 - typical test amount
+  medium: 1000,         // $10.00 - medium test
+  large: 10000,         // $100.00 - large test
+};
+```
+
+### Test Metadata
+
+```javascript
+const TEST_METADATA = {
+  test: true,
+  environment: 'testing',
+  order_id: 'test_order_123',
+  timestamp: Date.now()
+};
+```
+
+## Common Testing Issues
+
+### Issue: Webhook Not Received
+
+**Causes:**
+- Webhook URL not publicly accessible
+- Server not running
+- Firewall blocking requests
+
+**Solutions:**
+```bash
+# Check server is accessible
+curl http://localhost:3000/webhooks/card2crypto
+
+# Use ngrok for local testing
+ngrok http 3000
+
+# Check firewall settings
+# Ensure port is open
+```
+
+### Issue: Signature Verification Fails
+
+**Causes:**
+- Using wrong webhook secret
+- Body parsing modifies payload
+- Incorrect signature algorithm
+
+**Solutions:**
+```javascript
+// Use raw body for verification
+app.use('/webhooks', express.raw({ type: 'application/json' }));
+
+// Then parse manually
+const payload = JSON.parse(req.body.toString());
+
+// Verify before modifying
+if (!verifySignature(payload, signature, secret)) {
+  return res.status(401).send('Invalid signature');
+}
+```
+
+### Issue: Payment Not Completing
+
+**Causes:**
+- Card declined
+- Network timeout
+- Incorrect card details
+
+**Solutions:**
+- Use your own valid credit card
+- Check card details are entered correctly
+- Verify network connection
+- Check Card2Crypto dashboard for errors
+
+## Pre-Launch Checklist
+
+Before going live:
+
+- [ ] Test complete payment flow end-to-end
+- [ ] Verify webhook delivery and signature verification
+- [ ] Test refund process (if applicable)
+- [ ] Check error handling for all scenarios
+- [ ] Verify API keys are correct
+- [ ] Test with multiple payment amounts
+- [ ] Verify balance calculations (amount - 15% fee)
+- [ ] Test return URL handling
+- [ ] Check database updates correctly
+- [ ] Review logs for errors
+- [ ] Test on mobile devices
+- [ ] Verify HTTPS is used in production
+- [ ] Check rate limiting behavior
+- [ ] Test concurrent payments
+- [ ] Verify dashboard shows correct data
+
+## Continuous Testing
+
+Set up monitoring to catch issues:
+
+```javascript
+// Monitor webhook delivery
+setInterval(async () => {
+  const failedWebhooks = await db.webhooks.count({
+    where: { status: 'failed' }
+  });
+
+  if (failedWebhooks > 10) {
+    alert('Many webhook failures detected');
+  }
+}, 300000); // Every 5 minutes
+
+// Monitor payment success rate
+const successRate = await db.payments.aggregate({
+  where: { created_at: { gte: yesterday } },
+  _count: { id: true },
+  _sum: { where: { status: 'completed' } }
+});
+
+if (successRate < 0.95) {
+  alert('Payment success rate below 95%');
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Error Reference"
+    icon="triangle-exclamation"
+    href="/resources/errors"
+  >
+    Handle errors in your tests
+  </Card>
+  <Card
+    title="Webhook Testing"
+    icon="webhook"
+    href="/webhooks/testing"
+  >
+    Comprehensive webhook testing guide
+  </Card>
+  <Card
+    title="Node.js Guide"
+    icon="node-js"
+    href="/guides/nodejs"
+  >
+    See testing examples
+  </Card>
+  <Card
+    title="FAQ"
+    icon="question"
+    href="/resources/faq"
+  >
+    Common testing questions
+  </Card>
+</CardGroup>

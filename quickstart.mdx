@@ -1,80 +1,244 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: 'Quickstart'
+description: 'Start accepting payments in under 5 minutes'
 ---
 
-## Get started in three steps
+## Create Your Account
 
-Get your documentation site running locally and make your first customization.
+<Steps>
+  <Step title="Register as a Seller">
+    Visit [card2crypto.cc/register](https://card2crypto.cc/register) and create your account
 
-### Step 1: Set up your local environment
+    ```bash
+    Required Information:
+    - Email address
+    - Business name
+    - Shop/website URL
+    - Estimated monthly volume
+    ```
+  </Step>
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+  <Step title="Wait for Approval">
+    Your application will be reviewed by our team within 24-48 hours. You'll receive an email notification once approved.
+  </Step>
 
-### Step 2: Deploy your changes
+  <Step title="Create Your Shop">
+    Once approved, log in and create your shop to generate production API credentials.
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    <Warning>
+    You can only create ONE shop per account. Your API keys are production-ready immediately.
+    </Warning>
+  </Step>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+  <Step title="Configure Crypto Addresses">
+    Set up your Bitcoin and/or Litecoin withdrawal addresses in Settings to receive payouts.
+  </Step>
+</Steps>
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+## Get Your API Key
 
-### Step 3: Go live
+Navigate to your [Dashboard](https://card2crypto.cc/dashboard/shops) and copy your production API key:
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+```bash
+c2c_live_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6...
+```
 
-## Next steps
+<Warning>
+Never expose your API key in client-side code or public repositories. Always use it server-side only.
+</Warning>
 
-Now that you have your docs running, explore these key features:
+## Make Your First Payment
 
-<CardGroup cols={2}>
+### 1. Create a Payment
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
+Make a POST request to create a payment:
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
+<CodeGroup>
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
+```javascript Node.js
+const response = await fetch('https://card2crypto.cc/api/v1/payments', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer c2c_live_your_api_key_here',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    amount: 5000, // $50.00 in cents
+    currency: 'usd',
+    customer_email: 'customer@example.com',
+    description: 'Order #1234',
+    success_url: 'https://yoursite.com/success',
+    cancel_url: 'https://yoursite.com/cancel'
+  })
+});
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
+const payment = await response.json();
+console.log(payment.checkout_url);
+```
 
-</CardGroup>
+```php PHP
+<?php
+$data = [
+    'amount' => 5000, // $50.00 in cents
+    'currency' => 'usd',
+    'customer_email' => 'customer@example.com',
+    'description' => 'Order #1234',
+    'success_url' => 'https://yoursite.com/success',
+    'cancel_url' => 'https://yoursite.com/cancel'
+];
+
+$ch = curl_init('https://card2crypto.cc/api/v1/payments');
+curl_setopt($ch, CURLOPT_POST, 1);
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    'Authorization: Bearer c2c_live_your_api_key_here',
+    'Content-Type: application/json'
+]);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+
+$response = curl_exec($ch);
+$payment = json_decode($response, true);
+
+echo $payment['checkout_url'];
+?>
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    'https://card2crypto.cc/api/v1/payments',
+    headers={
+        'Authorization': 'Bearer c2c_live_your_api_key_here',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'amount': 5000,  # $50.00 in cents
+        'currency': 'usd',
+        'customer_email': 'customer@example.com',
+        'description': 'Order #1234',
+        'success_url': 'https://yoursite.com/success',
+        'cancel_url': 'https://yoursite.com/cancel'
+    }
+)
+
+payment = response.json()
+print(payment['checkout_url'])
+```
+
+</CodeGroup>
+
+### 2. Redirect to Checkout
+
+The API returns a `checkout_url`. Redirect your customer to this URL:
+
+```javascript
+window.location.href = payment.checkout_url;
+```
+
+The customer will see a checkout page where they can enter their card details.
+
+### 3. Handle Webhooks
+
+Set up a webhook endpoint to receive payment notifications:
+
+<CodeGroup>
+
+```javascript Node.js
+const crypto = require('crypto');
+
+app.post('/webhooks/card2crypto', (req, res) => {
+  // Verify signature
+  const signature = req.headers['x-card2crypto-signature'];
+  const payload = JSON.stringify(req.body);
+
+  const expectedSignature = crypto
+    .createHmac('sha256', process.env.WEBHOOK_SECRET)
+    .update(payload)
+    .digest('hex');
+
+  if (signature !== expectedSignature) {
+    return res.status(401).send('Invalid signature');
+  }
+
+  // Process webhook
+  const { event, payment } = req.body;
+
+  if (event === 'payment.completed') {
+    console.log(`Payment ${payment.id} completed!`);
+    // Update your database, send confirmation email, etc.
+  }
+
+  res.status(200).send('OK');
+});
+```
+
+```php PHP
+<?php
+$signature = $_SERVER['HTTP_X_CARD2CRYPTO_SIGNATURE'];
+$payload = file_get_contents('php://input');
+
+$expectedSignature = hash_hmac('sha256', $payload, getenv('WEBHOOK_SECRET'));
+
+if ($signature !== $expectedSignature) {
+    http_response_code(401);
+    die('Invalid signature');
+}
+
+$data = json_decode($payload, true);
+
+if ($data['event'] === 'payment.completed') {
+    error_log("Payment {$data['payment']['id']} completed!");
+    // Update your database, send confirmation email, etc.
+}
+
+http_response_code(200);
+?>
+```
+
+</CodeGroup>
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+Learn more about webhook security in the [Webhook Security](/webhooks/security) guide.
 </Note>
+
+## Test Your Integration
+
+Use the [Payment Testing Tool](https://card2crypto.cc/test-payment) in your dashboard to quickly test payment creation without writing code.
+
+<Warning>
+All payments are live and real. Test with small amounts like $0.50 to verify your integration works correctly.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="API Reference"
+    icon="code"
+    href="/api-reference/payments/create"
+  >
+    Complete API endpoint documentation
+  </Card>
+  <Card
+    title="Webhook Events"
+    icon="webhook"
+    href="/webhooks/events"
+  >
+    All webhook event types and payloads
+  </Card>
+  <Card
+    title="Integration Guides"
+    icon="book"
+    href="/guides/nodejs"
+  >
+    Platform-specific integration tutorials
+  </Card>
+  <Card
+    title="Error Handling"
+    icon="triangle-exclamation"
+    href="/resources/errors"
+  >
+    Common errors and how to fix them
+  </Card>
+</CardGroup>

@@ -1,0 +1,682 @@
+---
+title: 'PHP Integration Guide'
+description: 'Complete guide to integrating Card2Crypto with PHP'
+---
+
+## Prerequisites
+
+- PHP 7.4 or higher
+- cURL extension enabled
+- Card2Crypto account with API key
+
+## Quick Start
+
+### 1. Set Up Environment Variables
+
+Create a `.env` file in your project root:
+
+```bash
+# .env
+CARD2CRYPTO_API_KEY=c2c_live_your_api_key_here
+CARD2CRYPTO_WEBHOOK_SECRET=your_webhook_secret_here
+```
+
+Add to `.gitignore`:
+
+```
+.env
+```
+
+### 2. Load Environment Variables
+
+```php
+<?php
+// config.php
+
+// Load .env file
+if (file_exists(__DIR__ . '/.env')) {
+    $lines = file(__DIR__ . '/.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        if (strpos($line, '=') !== false && strpos($line, '#') !== 0) {
+            list($name, $value) = explode('=', $line, 2);
+            putenv(trim($name) . '=' . trim($value));
+        }
+    }
+}
+
+define('CARD2CRYPTO_API_KEY', getenv('CARD2CRYPTO_API_KEY'));
+define('CARD2CRYPTO_WEBHOOK_SECRET', getenv('CARD2CRYPTO_WEBHOOK_SECRET'));
+define('CARD2CRYPTO_API_URL', 'https://card2crypto.cc/api/v1');
+```
+
+### 3. Create Card2Crypto Class
+
+```php
+<?php
+// lib/Card2Crypto.php
+
+class Card2Crypto {
+    private $apiKey;
+    private $baseUrl = 'https://card2crypto.cc/api/v1';
+
+    public function __construct($apiKey) {
+        $this->apiKey = $apiKey;
+    }
+
+    public function createPayment($data) {
+        $endpoint = $this->baseUrl . '/payments';
+
+        $ch = curl_init($endpoint);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Authorization: Bearer ' . $this->apiKey,
+            'Content-Type: application/json'
+        ]);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+        if (curl_errno($ch)) {
+            throw new Exception('cURL error: ' . curl_error($ch));
+        }
+
+        curl_close($ch);
+
+        $result = json_decode($response, true);
+
+        if ($httpCode !== 200 || !$result['success']) {
+            throw new Exception($result['error'] ?? 'Payment creation failed');
+        }
+
+        return $result['data'];
+    }
+
+    public function getPayment($paymentId) {
+        $endpoint = $this->baseUrl . '/payments/' . $paymentId;
+
+        $ch = curl_init($endpoint);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Authorization: Bearer ' . $this->apiKey
+        ]);
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+        if (curl_errno($ch)) {
+            throw new Exception('cURL error: ' . curl_error($ch));
+        }
+
+        curl_close($ch);
+
+        $result = json_decode($response, true);
+
+        if ($httpCode !== 200 || !$result['success']) {
+            throw new Exception($result['error'] ?? 'Payment retrieval failed');
+        }
+
+        return $result['data'];
+    }
+
+    public function verifyWebhookSignature($payload, $signature, $secret) {
+        $expectedSignature = hash_hmac('sha256', json_encode($payload), $secret);
+        return hash_equals($expectedSignature, $signature);
+    }
+}
+```
+
+## Creating Payments
+
+### Basic Payment Creation
+
+```php
+<?php
+// create-payment.php
+
+require_once 'config.php';
+require_once 'lib/Card2Crypto.php';
+
+$c2c = new Card2Crypto(CARD2CRYPTO_API_KEY);
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    try {
+        $payment = $c2c->createPayment([
+            'amount' => (int)$_POST['amount'], // Amount in cents
+            'currency' => 'usd',
+            'return_url' => 'https://yoursite.com/payment-complete.php',
+            'customer_email' => $_POST['email'] ?? null,
+            'customer_name' => $_POST['name'] ?? null,
+            'metadata' => [
+                'order_id' => $_POST['order_id'] ?? null
+            ]
+        ]);
+
+        // Redirect to checkout
+        header('Location: ' . $payment['checkout_url']);
+        exit;
+
+    } catch (Exception $e) {
+        echo 'Error: ' . htmlspecialchars($e->getMessage());
+    }
+}
+?>
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Create Payment</title>
+</head>
+<body>
+    <h1>Create Payment</h1>
+    <form method="POST">
+        <label>
+            Amount (in cents):
+            <input type="number" name="amount" required min="50">
+        </label>
+        <br>
+        <label>
+            Email:
+            <input type="email" name="email">
+        </label>
+        <br>
+        <label>
+            Name:
+            <input type="text" name="name">
+        </label>
+        <br>
+        <label>
+            Order ID:
+            <input type="text" name="order_id">
+        </label>
+        <br>
+        <button type="submit">Pay Now</button>
+    </form>
+</body>
+</html>
+```
+
+### Payment with Database
+
+```php
+<?php
+// create-order.php
+
+require_once 'config.php';
+require_once 'lib/Card2Crypto.php';
+require_once 'lib/Database.php';
+
+$db = new PDO('mysql:host=localhost;dbname=mydb', 'username', 'password');
+$c2c = new Card2Crypto(CARD2CRYPTO_API_KEY);
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    try {
+        // Create order in database
+        $stmt = $db->prepare('
+            INSERT INTO orders (user_id, product_name, amount, status, created_at)
+            VALUES (?, ?, ?, ?, NOW())
+        ');
+        $stmt->execute([
+            $_POST['user_id'],
+            $_POST['product_name'],
+            $_POST['amount'],
+            'pending'
+        ]);
+
+        $orderId = $db->lastInsertId();
+
+        // Create payment
+        $payment = $c2c->createPayment([
+            'amount' => (int)$_POST['amount'],
+            'currency' => 'usd',
+            'return_url' => 'https://yoursite.com/order-complete.php?order_id=' . $orderId,
+            'metadata' => [
+                'order_id' => $orderId,
+                'user_id' => $_POST['user_id']
+            ]
+        ]);
+
+        // Update order with payment ID
+        $stmt = $db->prepare('UPDATE orders SET payment_id = ? WHERE id = ?');
+        $stmt->execute([$payment['id'], $orderId]);
+
+        // Redirect to checkout
+        header('Location: ' . $payment['checkout_url']);
+        exit;
+
+    } catch (Exception $e) {
+        echo 'Error: ' . htmlspecialchars($e->getMessage());
+    }
+}
+```
+
+## Handling Return URL
+
+```php
+<?php
+// payment-complete.php
+
+require_once 'config.php';
+require_once 'lib/Card2Crypto.php';
+
+$c2c = new Card2Crypto(CARD2CRYPTO_API_KEY);
+
+if (!isset($_GET['payment_id'])) {
+    http_response_code(400);
+    die('Missing payment ID');
+}
+
+try {
+    $payment = $c2c->getPayment($_GET['payment_id']);
+
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Payment Status</title>
+    </head>
+    <body>
+        <h1>Payment Status</h1>
+
+        <?php if ($payment['status'] === 'completed'): ?>
+            <h2>Payment Successful!</h2>
+            <p>Payment ID: <?= htmlspecialchars($payment['id']) ?></p>
+            <p>Amount: $<?= number_format($payment['amount'] / 100, 2) ?></p>
+            <p>Status: Completed</p>
+
+        <?php elseif ($payment['status'] === 'pending'): ?>
+            <h2>Payment Processing</h2>
+            <p>Your payment is still being processed...</p>
+
+        <?php else: ?>
+            <h2>Payment Failed</h2>
+            <p>Your payment could not be processed. Please try again.</p>
+
+        <?php endif; ?>
+    </body>
+    </html>
+    <?php
+
+} catch (Exception $e) {
+    http_response_code(500);
+    echo 'Error: ' . htmlspecialchars($e->getMessage());
+}
+```
+
+## Webhook Integration
+
+### Basic Webhook Handler
+
+```php
+<?php
+// webhook.php
+
+require_once 'config.php';
+require_once 'lib/Card2Crypto.php';
+
+$c2c = new Card2Crypto(CARD2CRYPTO_API_KEY);
+
+// Get raw POST body
+$payload = json_decode(file_get_contents('php://input'), true);
+$signature = $_SERVER['HTTP_X_CARD2CRYPTO_SIGNATURE'] ?? '';
+
+// Verify signature
+if (!$c2c->verifyWebhookSignature($payload, $signature, CARD2CRYPTO_WEBHOOK_SECRET)) {
+    http_response_code(401);
+    die('Invalid signature');
+}
+
+// Return 200 OK immediately
+http_response_code(200);
+echo 'OK';
+
+// Log webhook
+error_log('Webhook received: ' . $payload['event']);
+
+// Process webhook based on event type
+switch ($payload['event']) {
+    case 'payment.completed':
+        handlePaymentCompleted($payload['payment']);
+        break;
+
+    case 'payment.failed':
+        handlePaymentFailed($payload['payment']);
+        break;
+
+    case 'payment.refunded':
+        handlePaymentRefunded($payload['payment']);
+        break;
+
+    default:
+        error_log('Unknown event type: ' . $payload['event']);
+}
+
+function handlePaymentCompleted($payment) {
+    $orderId = $payment['metadata']['order_id'] ?? null;
+
+    if (!$orderId) {
+        error_log('No order ID in payment metadata');
+        return;
+    }
+
+    try {
+        $db = new PDO('mysql:host=localhost;dbname=mydb', 'username', 'password');
+
+        // Update order status
+        $stmt = $db->prepare('UPDATE orders SET status = ? WHERE id = ?');
+        $stmt->execute(['paid', $orderId]);
+
+        error_log("Order $orderId marked as paid");
+
+        // Grant access to product
+        // grantAccess($payment['customer_email']);
+
+        // Send confirmation email
+        // sendEmail($payment['customer_email'], 'Payment confirmed!');
+
+    } catch (Exception $e) {
+        error_log('Error processing payment: ' . $e->getMessage());
+    }
+}
+
+function handlePaymentFailed($payment) {
+    $orderId = $payment['metadata']['order_id'] ?? null;
+
+    if ($orderId) {
+        try {
+            $db = new PDO('mysql:host=localhost;dbname=mydb', 'username', 'password');
+            $stmt = $db->prepare('UPDATE orders SET status = ? WHERE id = ?');
+            $stmt->execute(['payment_failed', $orderId]);
+
+            error_log("Order $orderId marked as failed");
+        } catch (Exception $e) {
+            error_log('Error: ' . $e->getMessage());
+        }
+    }
+}
+
+function handlePaymentRefunded($payment) {
+    $orderId = $payment['metadata']['order_id'] ?? null;
+
+    if ($orderId) {
+        try {
+            $db = new PDO('mysql:host=localhost;dbname=mydb', 'username', 'password');
+            $stmt = $db->prepare('UPDATE orders SET status = ? WHERE id = ?');
+            $stmt->execute(['refunded', $orderId]);
+
+            // Revoke access
+            // revokeAccess($payment['customer_email']);
+
+            error_log("Order $orderId refunded");
+        } catch (Exception $e) {
+            error_log('Error: ' . $e->getMessage());
+        }
+    }
+}
+```
+
+## Complete Example with Database
+
+```php
+<?php
+// Database schema (MySQL)
+/*
+CREATE TABLE orders (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    user_id INT NOT NULL,
+    product_name VARCHAR(255) NOT NULL,
+    amount INT NOT NULL,
+    status VARCHAR(50) DEFAULT 'pending',
+    payment_id VARCHAR(255) UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX(user_id),
+    INDEX(payment_id)
+);
+*/
+
+// lib/Database.php
+class Database {
+    private $pdo;
+
+    public function __construct() {
+        $this->pdo = new PDO(
+            'mysql:host=localhost;dbname=mydb',
+            getenv('DB_USERNAME'),
+            getenv('DB_PASSWORD'),
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+        );
+    }
+
+    public function createOrder($userId, $productName, $amount) {
+        $stmt = $this->pdo->prepare('
+            INSERT INTO orders (user_id, product_name, amount, status)
+            VALUES (?, ?, ?, ?)
+        ');
+        $stmt->execute([$userId, $productName, $amount, 'pending']);
+        return $this->pdo->lastInsertId();
+    }
+
+    public function getOrder($id) {
+        $stmt = $this->pdo->prepare('SELECT * FROM orders WHERE id = ?');
+        $stmt->execute([$id]);
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    public function updateOrderPaymentId($orderId, $paymentId) {
+        $stmt = $this->pdo->prepare('UPDATE orders SET payment_id = ? WHERE id = ?');
+        $stmt->execute([$paymentId, $orderId]);
+    }
+
+    public function updateOrderStatus($orderId, $status) {
+        $stmt = $this->pdo->prepare('UPDATE orders SET status = ? WHERE id = ?');
+        $stmt->execute([$status, $orderId]);
+    }
+}
+
+// checkout.php
+require_once 'config.php';
+require_once 'lib/Card2Crypto.php';
+require_once 'lib/Database.php';
+
+$c2c = new Card2Crypto(CARD2CRYPTO_API_KEY);
+$db = new Database();
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    try {
+        // Create order
+        $orderId = $db->createOrder(
+            $_POST['user_id'],
+            $_POST['product_name'],
+            $_POST['amount']
+        );
+
+        // Create payment
+        $payment = $c2c->createPayment([
+            'amount' => (int)$_POST['amount'],
+            'currency' => 'usd',
+            'return_url' => 'https://yoursite.com/complete.php?order_id=' . $orderId,
+            'metadata' => [
+                'order_id' => $orderId,
+                'user_id' => $_POST['user_id']
+            ]
+        ]);
+
+        // Update order with payment ID
+        $db->updateOrderPaymentId($orderId, $payment['id']);
+
+        // Redirect to checkout
+        header('Location: ' . $payment['checkout_url']);
+        exit;
+
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo 'Error: ' . htmlspecialchars($e->getMessage());
+    }
+}
+```
+
+## Error Handling
+
+```php
+<?php
+// lib/Card2CryptoException.php
+
+class Card2CryptoException extends Exception {
+    private $statusCode;
+    private $response;
+
+    public function __construct($message, $statusCode = 500, $response = null) {
+        parent::__construct($message);
+        $this->statusCode = $statusCode;
+        $this->response = $response;
+    }
+
+    public function getStatusCode() {
+        return $this->statusCode;
+    }
+
+    public function getResponse() {
+        return $this->response;
+    }
+}
+
+// Updated Card2Crypto class with better error handling
+class Card2Crypto {
+    // ... existing code ...
+
+    public function createPayment($data) {
+        $endpoint = $this->baseUrl . '/payments';
+
+        $ch = curl_init($endpoint);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Authorization: Bearer ' . $this->apiKey,
+            'Content-Type: application/json'
+        ]);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+        if (curl_errno($ch)) {
+            throw new Card2CryptoException('Network error: ' . curl_error($ch));
+        }
+
+        curl_close($ch);
+
+        $result = json_decode($response, true);
+
+        if ($httpCode !== 200) {
+            throw new Card2CryptoException(
+                $result['error'] ?? 'Payment creation failed',
+                $httpCode,
+                $result
+            );
+        }
+
+        if (!$result['success']) {
+            throw new Card2CryptoException($result['error'] ?? 'Unknown error', $httpCode);
+        }
+
+        return $result['data'];
+    }
+}
+
+// Usage with error handling
+try {
+    $payment = $c2c->createPayment([
+        'amount' => 10000,
+        'currency' => 'usd',
+        'return_url' => 'https://yoursite.com/success'
+    ]);
+
+    header('Location: ' . $payment['checkout_url']);
+    exit;
+
+} catch (Card2CryptoException $e) {
+    error_log('Card2Crypto error (' . $e->getStatusCode() . '): ' . $e->getMessage());
+    http_response_code($e->getStatusCode());
+    echo 'Payment error: ' . htmlspecialchars($e->getMessage());
+
+} catch (Exception $e) {
+    error_log('Unexpected error: ' . $e->getMessage());
+    http_response_code(500);
+    echo 'An unexpected error occurred';
+}
+```
+
+## Testing
+
+### Local Testing
+
+```bash
+# Install PHP built-in server
+php -S localhost:8000
+
+# Use ngrok to expose locally
+ngrok http 8000
+
+# Use ngrok URL in webhook settings
+# https://abc123.ngrok.io/webhook.php
+```
+
+## Best Practices
+
+1. **Never expose API keys in frontend code**
+2. **Always verify webhook signatures**
+3. **Use prepared statements to prevent SQL injection**
+4. **Validate and sanitize all user input**
+5. **Log all payment-related events**
+6. **Handle errors gracefully**
+7. **Use HTTPS in production**
+8. **Keep dependencies updated**
+9. **Test with real payments before going live**
+10. **Implement proper error logging**
+
+## Security Checklist
+
+- Store API keys in environment variables
+- Use HTTPS for all payment pages
+- Verify webhook signatures
+- Sanitize all user input
+- Use prepared statements for database queries
+- Enable PHP error logging
+- Set appropriate file permissions
+- Keep PHP version updated
+- Use secure session handling
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="API Reference"
+    icon="code"
+    href="/api-reference/introduction"
+  >
+    Complete API documentation
+  </Card>
+  <Card
+    title="Webhook Security"
+    icon="shield-check"
+    href="/webhooks/security"
+  >
+    Learn about webhook verification
+  </Card>
+  <Card
+    title="Node.js Guide"
+    icon="node-js"
+    href="/guides/nodejs"
+  >
+    Integration guide for Node.js
+  </Card>
+  <Card
+    title="Testing Guide"
+    icon="flask"
+    href="/resources/testing"
+  >
+    How to test your integration
+  </Card>
+</CardGroup>

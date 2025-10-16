@@ -1,0 +1,555 @@
+---
+title: 'Rate Limits'
+description: 'API rate limiting policies and best practices'
+---
+
+## Rate Limit Overview
+
+Card2Crypto enforces rate limits to ensure fair usage and system stability.
+
+**Current Limits:**
+- **100 requests per minute** per API key
+- Measured using a sliding window algorithm
+
+## Rate Limit Headers
+
+Every API response includes rate limit information in headers:
+
+```http
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 95
+X-RateLimit-Reset: 1697654400
+```
+
+| Header | Description |
+|--------|-------------|
+| `X-RateLimit-Limit` | Maximum requests per minute |
+| `X-RateLimit-Remaining` | Requests remaining in current window |
+| `X-RateLimit-Reset` | Unix timestamp when limit resets |
+
+## Rate Limit Response
+
+When you exceed the rate limit, you'll receive a `429` response:
+
+```json
+{
+  "success": false,
+  "error": "Rate limit exceeded. Try again in 30 seconds."
+}
+```
+
+## Checking Rate Limit Status
+
+```javascript
+const response = await fetch('https://card2crypto.cc/api/v1/payments/pay_123', {
+  headers: { 'Authorization': `Bearer ${apiKey}` }
+});
+
+const remaining = response.headers.get('X-RateLimit-Remaining');
+const reset = response.headers.get('X-RateLimit-Reset');
+
+console.log(`${remaining} requests remaining`);
+console.log(`Resets at ${new Date(reset * 1000)}`);
+```
+
+## Best Practices
+
+### 1. Implement Exponential Backoff
+
+Retry failed requests with increasing delays:
+
+```javascript
+async function fetchWithRetry(url, options, maxRetries = 3) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const response = await fetch(url, options);
+
+    if (response.status !== 429) {
+      return response;
+    }
+
+    // Calculate exponential backoff delay
+    const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+    console.log(`Rate limited. Retrying in ${delay}ms...`);
+
+    await new Promise(resolve => setTimeout(resolve, delay));
+  }
+
+  throw new Error('Max retries exceeded');
+}
+```
+
+### 2. Use Request Queuing
+
+Queue requests to stay within limits:
+
+```javascript
+class RequestQueue {
+  constructor(maxPerMinute = 100) {
+    this.maxPerMinute = maxPerMinute;
+    this.queue = [];
+    this.processing = false;
+  }
+
+  async add(fn) {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ fn, resolve, reject });
+      this.process();
+    });
+  }
+
+  async process() {
+    if (this.processing || this.queue.length === 0) return;
+
+    this.processing = true;
+
+    while (this.queue.length > 0) {
+      const { fn, resolve, reject } = this.queue.shift();
+
+      try {
+        const result = await fn();
+        resolve(result);
+      } catch (error) {
+        reject(error);
+      }
+
+      // Wait to stay within rate limit
+      const delay = (60 * 1000) / this.maxPerMinute;
+      await new Promise(r => setTimeout(r, delay));
+    }
+
+    this.processing = false;
+  }
+}
+
+// Usage
+const queue = new RequestQueue(100);
+
+async function createPayment(data) {
+  return queue.add(() =>
+    fetch('https://card2crypto.cc/api/v1/payments', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(data)
+    })
+  );
+}
+```
+
+### 3. Monitor Rate Limit Headers
+
+Track remaining requests and slow down proactively:
+
+```javascript
+class RateLimitedClient {
+  constructor(apiKey) {
+    this.apiKey = apiKey;
+    this.remaining = 100;
+  }
+
+  async request(url, options = {}) {
+    // Slow down if close to limit
+    if (this.remaining < 10) {
+      console.warn(`Only ${this.remaining} requests remaining - slowing down`);
+      await new Promise(r => setTimeout(r, 1000));
+    }
+
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        'Authorization': `Bearer ${this.apiKey}`,
+        ...options.headers
+      }
+    });
+
+    // Update remaining count
+    this.remaining = parseInt(response.headers.get('X-RateLimit-Remaining') || '100');
+
+    return response;
+  }
+}
+
+// Usage
+const client = new RateLimitedClient(apiKey);
+const response = await client.request('https://card2crypto.cc/api/v1/payments/pay_123');
+```
+
+### 4. Cache API Responses
+
+Reduce API calls by caching responses:
+
+```javascript
+class CachedClient {
+  constructor(apiKey) {
+    this.apiKey = apiKey;
+    this.cache = new Map();
+  }
+
+  async getPayment(paymentId) {
+    // Check cache first
+    if (this.cache.has(paymentId)) {
+      const cached = this.cache.get(paymentId);
+
+      // Only cache final statuses
+      if (['completed', 'failed', 'refunded'].includes(cached.status)) {
+        console.log('Returning cached payment');
+        return cached;
+      }
+    }
+
+    // Fetch from API
+    const response = await fetch(
+      `https://card2crypto.cc/api/v1/payments/${paymentId}`,
+      {
+        headers: { 'Authorization': `Bearer ${this.apiKey}` }
+      }
+    );
+
+    const result = await response.json();
+    const payment = result.data;
+
+    // Cache if in final state
+    if (['completed', 'failed', 'refunded'].includes(payment.status)) {
+      this.cache.set(paymentId, payment);
+    }
+
+    return payment;
+  }
+}
+```
+
+### 5. Batch Operations
+
+Group multiple operations when possible:
+
+```javascript
+// BAD - 100 separate requests
+for (let i = 0; i < 100; i++) {
+  await getPayment(paymentIds[i]);
+}
+
+// GOOD - Use webhooks instead of polling
+// Webhooks notify you of changes without API calls
+
+// GOOD - Cache and batch
+const payments = await Promise.all(
+  paymentIds.slice(0, 10).map(id => getPaymentCached(id))
+);
+await new Promise(r => setTimeout(r, 1000)); // Throttle
+```
+
+## Rate Limit Strategies
+
+### Strategy 1: Token Bucket
+
+```javascript
+class TokenBucket {
+  constructor(capacity = 100, refillRate = 100) {
+    this.capacity = capacity;
+    this.tokens = capacity;
+    this.refillRate = refillRate; // tokens per minute
+    this.lastRefill = Date.now();
+  }
+
+  async consume(tokens = 1) {
+    this.refill();
+
+    if (this.tokens < tokens) {
+      const waitTime = ((tokens - this.tokens) / this.refillRate) * 60 * 1000;
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+      this.refill();
+    }
+
+    this.tokens -= tokens;
+  }
+
+  refill() {
+    const now = Date.now();
+    const elapsed = (now - this.lastRefill) / 1000 / 60; // minutes
+    const tokensToAdd = elapsed * this.refillRate;
+
+    this.tokens = Math.min(this.capacity, this.tokens + tokensToAdd);
+    this.lastRefill = now;
+  }
+}
+
+// Usage
+const bucket = new TokenBucket(100, 100);
+
+async function makeRequest() {
+  await bucket.consume(1);
+  return fetch(url, options);
+}
+```
+
+### Strategy 2: Sliding Window
+
+```javascript
+class SlidingWindow {
+  constructor(maxRequests = 100, windowMs = 60000) {
+    this.maxRequests = maxRequests;
+    this.windowMs = windowMs;
+    this.requests = [];
+  }
+
+  async throttle() {
+    const now = Date.now();
+
+    // Remove requests outside window
+    this.requests = this.requests.filter(
+      time => now - time < this.windowMs
+    );
+
+    // Wait if at limit
+    if (this.requests.length >= this.maxRequests) {
+      const oldestRequest = this.requests[0];
+      const waitTime = this.windowMs - (now - oldestRequest) + 100;
+
+      console.log(`Rate limit reached. Waiting ${waitTime}ms...`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+
+      return this.throttle(); // Recursive check
+    }
+
+    this.requests.push(now);
+  }
+}
+
+// Usage
+const limiter = new SlidingWindow(100, 60000);
+
+async function createPayment(data) {
+  await limiter.throttle();
+  return fetch(url, options);
+}
+```
+
+## Handling 429 Responses
+
+### Automatic Retry with Backoff
+
+```javascript
+async function apiCall(url, options, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    const response = await fetch(url, options);
+
+    if (response.status === 429) {
+      // Get retry-after from header if available
+      const retryAfter = response.headers.get('Retry-After');
+      const delay = retryAfter ? parseInt(retryAfter) * 1000 : Math.pow(2, i) * 1000;
+
+      console.log(`Rate limited. Retrying in ${delay}ms (attempt ${i + 1}/${retries})`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      continue;
+    }
+
+    return response;
+  }
+
+  throw new Error('Rate limit retry attempts exhausted');
+}
+```
+
+### Notify User
+
+```javascript
+async function createPayment(data) {
+  try {
+    return await apiCall(url, options);
+  } catch (error) {
+    if (error.message.includes('Rate limit')) {
+      // Show user-friendly message
+      alert('Server is busy. Please try again in a moment.');
+    }
+    throw error;
+  }
+}
+```
+
+## Monitoring Rate Limits
+
+### Track Usage
+
+```javascript
+class RateLimitMonitor {
+  constructor() {
+    this.stats = {
+      requests: 0,
+      rateLimited: 0,
+      retries: 0
+    };
+  }
+
+  recordRequest() {
+    this.stats.requests++;
+  }
+
+  recordRateLimit() {
+    this.stats.rateLimited++;
+  }
+
+  recordRetry() {
+    this.stats.retries++;
+  }
+
+  getStats() {
+    return {
+      ...this.stats,
+      rateLimitRate: (this.stats.rateLimited / this.stats.requests * 100).toFixed(2) + '%'
+    };
+  }
+}
+
+const monitor = new RateLimitMonitor();
+
+async function makeRequest(url, options) {
+  monitor.recordRequest();
+
+  try {
+    const response = await fetch(url, options);
+
+    if (response.status === 429) {
+      monitor.recordRateLimit();
+      // Retry logic...
+    }
+
+    return response;
+  } catch (error) {
+    throw error;
+  }
+}
+
+// Log stats periodically
+setInterval(() => {
+  console.log('Rate limit stats:', monitor.getStats());
+}, 60000); // Every minute
+```
+
+## Rate Limit Exceptions
+
+Some endpoints may have different limits:
+
+| Endpoint | Limit | Notes |
+|----------|-------|-------|
+| POST /api/v1/payments | 100/min | Standard rate limit |
+| GET /api/v1/payments/:id | 100/min | Standard rate limit |
+| Webhooks | No limit | Incoming webhooks not rate limited |
+
+## Increasing Rate Limits
+
+The default limit of 100 requests/minute is sufficient for most use cases.
+
+If you need higher limits:
+- Contact support with your use case
+- Enterprise plans may offer higher limits
+- Consider optimizing your integration first
+
+## Testing Rate Limits
+
+### Simulate Rate Limiting
+
+```javascript
+async function testRateLimit() {
+  console.log('Testing rate limit...');
+
+  for (let i = 0; i < 105; i++) {
+    try {
+      const response = await fetch('https://card2crypto.cc/api/v1/payments/test_pay_123', {
+        headers: { 'Authorization': `Bearer ${apiKey}` }
+      });
+
+      const remaining = response.headers.get('X-RateLimit-Remaining');
+
+      if (response.status === 429) {
+        console.log(`Rate limited at request ${i + 1}`);
+        break;
+      }
+
+      console.log(`Request ${i + 1}: ${remaining} remaining`);
+    } catch (error) {
+      console.error(`Request ${i + 1} failed:`, error.message);
+    }
+  }
+}
+```
+
+## Common Mistakes
+
+### 1. Polling Too Frequently
+
+```javascript
+// BAD - Polls every second (60+ requests/min)
+setInterval(() => getPayment(id), 1000);
+
+// GOOD - Use webhooks instead
+app.post('/webhooks/card2crypto', (req, res) => {
+  if (req.body.event === 'payment.completed') {
+    // Handle payment
+  }
+  res.send('OK');
+});
+```
+
+### 2. No Retry Logic
+
+```javascript
+// BAD - Fails immediately on 429
+const response = await fetch(url);
+if (response.status === 429) {
+  throw new Error('Rate limited');
+}
+
+// GOOD - Retry with backoff
+const response = await fetchWithRetry(url, options);
+```
+
+### 3. Ignoring Rate Limit Headers
+
+```javascript
+// BAD - Blindly makes requests
+for (let i = 0; i < 1000; i++) {
+  await createPayment(data);
+}
+
+// GOOD - Respects rate limits
+const limiter = new SlidingWindow(100, 60000);
+for (let i = 0; i < 1000; i++) {
+  await limiter.throttle();
+  await createPayment(data);
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Error Reference"
+    icon="triangle-exclamation"
+    href="/resources/errors"
+  >
+    Handle rate limit errors properly
+  </Card>
+  <Card
+    title="Webhook Overview"
+    icon="webhook"
+    href="/webhooks/overview"
+  >
+    Use webhooks instead of polling
+  </Card>
+  <Card
+    title="Node.js Guide"
+    icon="node-js"
+    href="/guides/nodejs"
+  >
+    See rate limiting examples
+  </Card>
+  <Card
+    title="Testing Guide"
+    icon="flask"
+    href="/resources/testing"
+  >
+    Test your rate limit handling
+  </Card>
+</CardGroup>
